@@ -29,6 +29,10 @@ jobs:
           channel: 'stable'
           android: true
 
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | flutter doctor --android-licenses || true
+
       - name: Install Flet and Dependencies
         run: |
           python -m pip install --upgrade pip
