@@ -1,0 +1,11 @@
+product: PUBG VIP Manager
+description: Secure PUBG Patch and License Manager
+org: com.tarig.pubgmanager
+app_name: PUBG VIP Manager
+
+android:
+  permissions:
+    - INTERNET
+    - ACCESS_NETWORK_STATE
+    - WRITE_EXTERNAL_STORAGE
+    - READ_EXTERNAL_STORAGE
