@@ -22,12 +22,26 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Flet and Dependencies
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+          android: true
+          cache: true
+
+      - name: Fix Android Licenses & Setup
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          yes | flutter doctor --android-licenses || true
+
+      - name: Install Python & Flet
         run: |
           python -m pip install --upgrade pip
           pip install flet requests
 
-      - name: Build APK
+      - name: Build Flet APK
         run: |
           flet build apk
 
