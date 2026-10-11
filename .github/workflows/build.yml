@@ -17,7 +17,7 @@ jobs:
           python-version: '3.10'
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -27,7 +27,6 @@ jobs:
         with:
           flutter-version: '3.19.6'
           channel: 'stable'
-          android: true
           cache: true
 
       - name: Fix Android Licenses & Setup
@@ -36,14 +35,14 @@ jobs:
           touch ~/.android/repositories.cfg
           yes | flutter doctor --android-licenses || true
 
-      - name: Install Python & Flet
+      - name: Install Python & Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flet requests
 
       - name: Build Flet APK
         run: |
-          flet build apk
+          flet build apk --verbose
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
