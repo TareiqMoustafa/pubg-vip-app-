@@ -1,0 +1,12 @@
+[project]
+name = "pubg_vip_manager"
+version = "1.0.0"
+description = "PUBG VIP Patch Manager"
+dependencies = [
+    "flet",
+    "requests"
+]
+
+[tool.flet]
+product = "PUBG VIP Manager"
+org = "com.pubg.vip"
