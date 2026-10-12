@@ -2,9 +2,10 @@
 name = "pubg_vip_manager"
 version = "1.0.0"
 description = "PUBG VIP Patch Manager"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "flet",
-    "requests"
+    "flet==1.0.*",
+    "httpx"
 ]
 
 [tool.flet]
