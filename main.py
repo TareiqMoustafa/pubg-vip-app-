@@ -2,6 +2,25 @@ import flet as ft
 import requests
 import os
 import threading
+import tempfile
+import subprocess
+
+# =====================================================================
+# 🛠️ [منطقة إعدادات المطور] - يمكنك تعديل أي رابط أو اسم بسهولة تامة هنا
+# =====================================================================
+class Config:
+    # رابط سيرفر التحقق المركزي (Vercel)
+    SERVER_URL = "https://pak-license-server.vercel.app"
+    
+    # رابط تحميل ملف الباتش المباشر (Catbox)
+    PATCH_DOWNLOAD_URL = "https://files.catbox.moe/nwnc4y.pak"
+    
+    # الاسم النهائي والدقيق لملف الباتش داخل ملفات اللعبة
+    TARGET_FILE_NAME = "res_pufferpatch_4.6.1.21589.pak"
+    
+    # مسار حفظ الباتش الرسمي داخل لعبة ببجي
+    TARGET_DIR = "/storage/emulated/0/Android/data/com.tencent.ig/files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks/"
+# =====================================================================
 
 def main(page: ft.Page):
     page.title = "PUBG VIP Manager Pro"
@@ -11,15 +30,7 @@ def main(page: ft.Page):
     page.window_width = 400
     page.window_height = 650
 
-    # رابط سيرفرك على Vercel للتحقق من الأكواد
-    SERVER_URL = "https://pak-license-server.vercel.app"
-    
-    # رابط تحميل الباتش المباشر من Catbox
-    PATCH_DOWNLOAD_URL = "https://files.catbox.moe/nwnc4y.pak"
-    
-    # اسم الملف النهائي المطابق تماماً لمتطلبات اللعبة
-    TARGET_FILE_NAME = "res_pufferpatch_4.6.1.21589.pak"
-
+    # واجهة إدخال كود التفعيل
     key_input = ft.TextField(
         label="أدخل كود التفعيل VIP",
         password=True,
@@ -48,8 +59,8 @@ def main(page: ft.Page):
 
         def background_task():
             try:
-                # 1. التحقق من الكود عبر سيرفر Vercel
-                res = requests.post(f"{SERVER_URL}/api/verify", json={"key": key, "device_id": "android_device_01"}, timeout=10)
+                # 1. الاتصال بسيرفر Vercel للتحقق من صلاحية الكود
+                res = requests.post(f"{Config.SERVER_URL}/api/verify", json={"key": key, "device_id": "android_device_01"}, timeout=10)
                 res_data = res.json()
                 status = res_data.get("status")
 
@@ -57,28 +68,40 @@ def main(page: ft.Page):
                     status_text.value = "الكود صالح! جاري تحميل ملف الباتش..."
                     page.update()
 
-                    # 2. تحميل الباتش من Catbox
-                    patch_res = requests.get(PATCH_DOWNLOAD_URL, stream=True, timeout=25)
+                    # 2. تحميل ملف الباتش من الرابط المحدد في الإعدادات
+                    patch_res = requests.get(Config.PATCH_DOWNLOAD_URL, stream=True, timeout=25)
                     
                     if patch_res.status_code == 200:
-                        # 3. مسار حفظ الباتش في مجلد لعبة ببجي الرسمي
-                        target_dir = "/storage/emulated/0/Android/data/com.tencent.ig/files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks/"
+                        temp_dir = tempfile.gettempdir()
+                        temp_file_path = os.path.join(temp_dir, Config.TARGET_FILE_NAME)
                         
-                        if os.path.exists(target_dir) or os.access("/storage/emulated/0/", os.W_OK):
-                            os.makedirs(target_dir, exist_ok=True)
-                            file_path = os.path.join(target_dir, TARGET_FILE_NAME)
-                            
-                            # حفظ الملف بالاسم الدقيق تلقائياً
-                            with open(file_path, "wb") as f:
-                                for chunk in patch_res.iter_content(chunk_size=1024):
-                                    if chunk:
-                                        f.write(chunk)
-                                        
-                            status_text.value = "تم تحميل وحقن الباتش بالاسم المطلوب بنجاح! ✅"
+                        # كتابة الملف مؤقتاً في ذاكرة الهاتف أثناء التحميل
+                        with open(temp_file_path, "wb") as f:
+                            for chunk in patch_res.iter_content(chunk_size=1024):
+                                if chunk:
+                                    f.write(chunk)
+
+                        status_text.value = "تم التحميل! جاري الحقن بالاسم الصحيح..."
+                        page.update()
+
+                        # 3. نقل الملف وتفعيله عبر Shizuku (أمر rish) لتجاوز قيود أندرويد الحديثة
+                        cmd = f"cp '{temp_file_path}' '{Config.TARGET_DIR}{Config.TARGET_FILE_NAME}'"
+                        process = subprocess.run(['rish', '-c', cmd], capture_output=True, text=True)
+
+                        if process.returncode == 0:
+                            status_text.value = "تم حقن الباتش وتفعيله بنجاح تام عبر Shizuku! ✅"
                             status_text.color = ft.colors.GREEN_400
                         else:
-                            status_text.value = "تم التحميل! يتطلب أندرويد 11+ تفعيل Shizuku للنقل."
-                            status_text.color = ft.colors.ORANGE_400
+                            # محاولة النقل بالطريقة العادية لو الجهاز يمتلك صلاحيات مباشرة
+                            try:
+                                os.makedirs(Config.TARGET_DIR, exist_ok=True)
+                                import shutil
+                                shutil.copy(temp_file_path, os.path.join(Config.TARGET_DIR, Config.TARGET_FILE_NAME))
+                                status_text.value = "تم حقن الباتش وتفعيله بنجاح تام! ✅"
+                                status_text.color = ft.colors.GREEN_400
+                            except Exception:
+                                status_text.value = "فشل النقل! تأكد من تفعيل صلاحيات Shizuku على جهازك."
+                                status_text.color = ft.colors.RED_400
                     else:
                         status_text.value = "فشل تحميل ملف الباتش من الرابط الخارجي!"
                         status_text.color = ft.colors.RED_400
@@ -87,20 +110,21 @@ def main(page: ft.Page):
                     status_text.value = "عذراً، هذا الكود محظور نهائياً (Banned) ❌"
                     status_text.color = ft.colors.RED_400
                 else:
-                    status_text.value = res_data.get("message", "الكود غير صالح!")
+                    status_text.value = res_data.get("message", "الكود غير صالح أو منتهي!")
                     status_text.color = ft.colors.RED_400
 
             except requests.exceptions.ConnectionError:
-                status_text.value = "تعذر الاتصال بالسيرفر، تأكد من الإنترنت."
+                status_text.value = "تعذر الاتصال بالسيرفر، تأكد من اتصال الإنترنت."
                 status_text.color = ft.colors.RED_400
             except Exception as ex:
-                status_text.value = f"خطأ غير متوقع: {str(ex)}"
+                status_text.value = f"حدث خطأ غير متوقع: {str(ex)}"
                 status_text.color = ft.colors.RED_400
 
             progress_bar.visible = False
             action_btn.disabled = False
             page.update()
 
+        # تشغيل العملية في الخلفية لمنع تهنيج الواجهة (حماية من خطأ ANR)
         threading.Thread(target=background_task).start()
 
     action_btn = ft.ElevatedButton(
@@ -134,4 +158,6 @@ def main(page: ft.Page):
         )
     )
 
-ft.app(target=main)
+# التصحيح النهائي المتوافق تماماً مع Flet لتفادي خطأ الـ AttributeError
+if __name__ == "__main__":
+    ft.app(main)
