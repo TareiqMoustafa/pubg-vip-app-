@@ -1,231 +1,137 @@
 import flet as ft
 import requests
 import os
-import json
-import subprocess
-
-SERVER_URL = "https://pak-license-server.vercel.app/api/verify"
-PAK_URL = "https://files.catbox.moe/nwnc4y.pak"
-CONFIG_FILE = "config.json"
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    )
-}
-
-# مسارات النسخ المختلفة للعبة ببجي
-GAME_PATHS = {
-    "Global (العالمية)": (
-        "/sdcard/Android/data/com.tencent.ig/files/UE4Game/"
-        "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks"
-    ),
-    "Korea (الكورية)": (
-        "/sdcard/Android/data/com.pubg.krmobile/files/UE4Game/"
-        "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks"
-    ),
-    "Vietnam (الفيتنامية)": (
-        "/sdcard/Android/data/com.vng.pubgmobile/files/UE4Game/"
-        "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks"
-    ),
-    "Taiwan (التايوانية)": (
-        "/sdcard/Android/data/com.rekoo.pubg/files/UE4Game/"
-        "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks"
-    ),
-}
-
-PAK_FILENAME = "res_pufferpatch_4.6.1.21589.pak"
-TEMP_PAK_PATH = "./temp_patch.pak"
-
+import threading
 
 def main(page: ft.Page):
-  page.title = "PUBG VIP Manager"
-  page.vertical_alignment = ft.MainAxisAlignment.CENTER
-  page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-  page.padding = 20
-  page.theme_mode = ft.ThemeMode.DARK
+    page.title = "PUBG VIP Manager Pro"
+    page.theme_mode = ft.ThemeMode.DARK
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.window_width = 400
+    page.window_height = 650
 
-  # عناصر الواجهة الرسومية (GUI Elements)
-  key_input = ft.TextField(
-      label="Enter VIP License Key",
-      width=320,
-      password=True,
-      can_reveal_password=True,
-      border_radius=10,
-  )
+    # رابط سيرفرك على Vercel للتحقق من الأكواد
+    SERVER_URL = "https://pak-license-server.vercel.app"
+    
+    # رابط تحميل الباتش المباشر من Catbox
+    PATCH_DOWNLOAD_URL = "https://files.catbox.moe/nwnc4y.pak"
+    
+    # اسم الملف النهائي المطابق تماماً لمتطلبات اللعبة
+    TARGET_FILE_NAME = "res_pufferpatch_4.6.1.21589.pak"
 
-  version_dropdown = ft.Dropdown(
-      label="Select Game Version",
-      width=320,
-      options=[ft.dropdown.Option(k) for k in GAME_PATHS.keys()],
-      value="Global (العالمية)",
-      border_radius=10,
-  )
+    key_input = ft.TextField(
+        label="أدخل كود التفعيل VIP",
+        password=True,
+        can_reveal_password=True,
+        border_color=ft.colors.AMBER,
+        focused_border_color=ft.colors.GREEN,
+        width=320
+    )
+    
+    status_text = ft.Text("أدخل الكود للاتصال بالسيرفر...", size=14, color=ft.colors.WHITE70, text_align=ft.TextAlign.CENTER)
+    progress_bar = ft.ProgressBar(width=320, visible=False, color=ft.colors.AMBER)
 
-  status_text = ft.Text(
-      "Status: Ready for deployment", color=ft.colors.YELLOW, text_align="center"
-  )
-  progress_ring = ft.ProgressRing(visible=False, width=25, height=25)
+    def process_activation(e):
+        key = key_input.value.strip()
+        if not key:
+            status_text.value = "الرجاء كتابة الكود أولاً!"
+            status_text.color = ft.colors.RED
+            page.update()
+            return
 
-  # استرجاع المفتاح المحفوظ مسبقاً إن وجد
-  def load_saved_key():
-    if os.path.exists(CONFIG_FILE):
-      try:
-        with open(CONFIG_FILE, "r") as f:
-          return json.load(f).get("key", "")
-      except Exception:
-        pass
-    return ""
+        status_text.value = "جاري الاتصال بالسيرفر المركزي..."
+        status_text.color = ft.colors.BLUE_400
+        progress_bar.visible = True
+        action_btn.disabled = True
+        page.update()
 
-  saved_key = load_saved_key()
-  if saved_key:
-    key_input.value = saved_key
+        def background_task():
+            try:
+                # 1. التحقق من الكود عبر سيرفر Vercel
+                res = requests.post(f"{SERVER_URL}/api/verify", json={"key": key, "device_id": "android_device_01"}, timeout=10)
+                res_data = res.json()
+                status = res_data.get("status")
 
-  # نظام النشر الذكي (Standard -> Shizuku)
-  def smart_deploy(temp_path, target_path, target_dir):
-    # 1. الطريقة العادية للإصدارات القديمة
-    try:
-      os.makedirs(target_dir, exist_ok=True)
-      os.replace(temp_path, target_path)
-      return True, "Success: Deployed via Standard Method!"
-    except Exception:
-      pass
+                if status == "active":
+                    status_text.value = "الكود صالح! جاري تحميل ملف الباتش..."
+                    page.update()
 
-    # 2. طريقة Shizuku (rish) للأندرويد 11+ والمجلدات المقيدة
-    try:
-      result = subprocess.run(
-          [
-              "rish",
-              "-c",
-              f"mkdir -p {target_dir} && cp {temp_path} {target_path}",
-          ],
-          capture_output=True,
-          text=True,
-          timeout=5,
-      )
-      if result.returncode == 0:
-        return True, "Success: Deployed via Shizuku (rish)!"
-    except Exception:
-      pass
+                    # 2. تحميل الباتش من Catbox
+                    patch_res = requests.get(PATCH_DOWNLOAD_URL, stream=True, timeout=25)
+                    
+                    if patch_res.status_code == 200:
+                        # 3. مسار حفظ الباتش في مجلد لعبة ببجي الرسمي
+                        target_dir = "/storage/emulated/0/Android/data/com.tencent.ig/files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks/"
+                        
+                        if os.path.exists(target_dir) or os.access("/storage/emulated/0/", os.W_OK):
+                            os.makedirs(target_dir, exist_ok=True)
+                            file_path = os.path.join(target_dir, TARGET_FILE_NAME)
+                            
+                            # حفظ الملف بالاسم الدقيق تلقائياً
+                            with open(file_path, "wb") as f:
+                                for chunk in patch_res.iter_content(chunk_size=1024):
+                                    if chunk:
+                                        f.write(chunk)
+                                        
+                            status_text.value = "تم تحميل وحقن الباتش بالاسم المطلوب بنجاح! ✅"
+                            status_text.color = ft.colors.GREEN_400
+                        else:
+                            status_text.value = "تم التحميل! يتطلب أندرويد 11+ تفعيل Shizuku للنقل."
+                            status_text.color = ft.colors.ORANGE_400
+                    else:
+                        status_text.value = "فشل تحميل ملف الباتش من الرابط الخارجي!"
+                        status_text.color = ft.colors.RED_400
 
-    return (
-        False,
-        "Deployment failed! Ensure Shizuku is active and permission granted.",
+                elif status == "banned":
+                    status_text.value = "عذراً، هذا الكود محظور نهائياً (Banned) ❌"
+                    status_text.color = ft.colors.RED_400
+                else:
+                    status_text.value = res_data.get("message", "الكود غير صالح!")
+                    status_text.color = ft.colors.RED_400
+
+            except requests.exceptions.ConnectionError:
+                status_text.value = "تعذر الاتصال بالسيرفر، تأكد من الإنترنت."
+                status_text.color = ft.colors.RED_400
+            except Exception as ex:
+                status_text.value = f"خطأ غير متوقع: {str(ex)}"
+                status_text.color = ft.colors.RED_400
+
+            progress_bar.visible = False
+            action_btn.disabled = False
+            page.update()
+
+        threading.Thread(target=background_task).start()
+
+    action_btn = ft.ElevatedButton(
+        text="تحقق وفعل الباتش",
+        icon=ft.Icons.SECURITY,
+        on_click=process_activation,
+        bgcolor=ft.colors.RED_900,
+        color=ft.colors.WHITE,
+        width=320
     )
 
-  # دمج زر التشغيل والتحقق
-  def on_button_click(e):
-    key = key_input.value.strip()
-    selected_version = version_dropdown.value
-
-    if not key:
-      status_text.value = "Error: Key cannot be empty!"
-      status_text.color = ft.colors.RED
-      page.update()
-      return
-
-    # حفظ المفتاح محلياً للتسهيل
-    with open(CONFIG_FILE, "w") as f:
-      json.dump({"key": key}, f)
-
-    progress_ring.visible = True
-    status_text.value = "Connecting to server to verify key..."
-    status_text.color = ft.colors.BLUE
-    page.update()
-
-    game_dir = GAME_PATHS[selected_version]
-    game_path = os.path.join(game_dir, PAK_FILENAME)
-
-    try:
-      response = requests.get(
-          f"{SERVER_URL}?key={key}", headers=HEADERS, timeout=10
-      )
-      if response.status_code == 200:
-        data = response.json()
-
-        # الحالة الأولى: مفتاح نشط ومصرح له
-        if data.get("status") == "active":
-          status_text.value = "Downloading patch from cloud..."
-          page.update()
-
-          pak_resp = requests.get(
-              PAK_URL, headers=HEADERS, stream=True, timeout=25
-          )
-          if pak_resp.status_code == 200:
-            with open(TEMP_PAK_PATH, "wb") as f:
-              for chunk in pak_resp.iter_content(chunk_size=8192):
-                if chunk:
-                  f.write(chunk)
-
-            success, msg = smart_deploy(TEMP_PAK_PATH, game_path, game_dir)
-            if os.path.exists(TEMP_PAK_PATH):
-              os.remove(TEMP_PAK_PATH)
-
-            if success:
-              status_text.value = msg
-              status_text.color = ft.colors.GREEN
-            else:
-              status_text.value = msg
-              status_text.color = ft.colors.RED
-          else:
-            status_text.value = "Error: Failed to download patch file."
-            status_text.color = ft.colors.RED
-
-        # الحالة الثانية: مفتاح محظور أو منتهي (Ban / Expired) -> حذف الباتش تلقائياً من الهاتف فوراً
-        else:
-          status_text.value = (
-              f"ACCESS DENIED: {data.get('message', 'Blocked')}"
-          )
-          status_text.color = ft.colors.RED
-
-          # حذف الملف فوراً من جهاز العميل لحمايتك والتحكم الكامل
-          if os.path.exists(game_path):
-            try:
-              os.remove(game_path)
-            except Exception:
-              pass
-          subprocess.run(
-              ["rish", "-c", f"rm -f {game_path}"], capture_output=True
-          )
-
-      else:
-        status_text.value = "Error: Invalid server response."
-        status_text.color = ft.colors.RED
-    except Exception as ex:
-        status_text.value = f"Connection error: {str(ex)}"
-        status_text.color = ft.colors.RED
-
-    progress_ring.visible = False
-    page.update()
-
-  action_button = ft.ElevatedButton(
-      "Verify & Deploy Patch",
-      on_click=on_button_click,
-      color=ft.colors.WHITE,
-      bgcolor=ft.colors.BLUE_700,
-      width=320,
-      height=45,
-  )
-
-  # إضافة العناصر لصفحة التطبيق
-  page.add(
-      ft.Text(
-          "PUBG VIP Manager", size=22, weight=ft.FontWeight.BOLD, color="white"
-      ),
-      ft.Divider(color=ft.colors.GREY_800),
-      ft.VerticalDivider(height=10),
-      key_input,
-      ft.VerticalDivider(height=10),
-      version_dropdown,
-      ft.VerticalDivider(height=15),
-      action_button,
-      ft.VerticalDivider(height=15),
-      ft.Row(
-          [progress_ring, status_text],
-          alignment=ft.MainAxisAlignment.CENTER,
-      ),
-  )
-
+    page.add(
+        ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text("PUBG VIP Control Panel", size=20, weight=ft.FontWeight.BOLD, color=ft.colors.AMBER_ACCENT),
+                    ft.Divider(height=25, color=ft.colors.TRANSPARENT),
+                    key_input,
+                    ft.Divider(height=15, color=ft.colors.TRANSPARENT),
+                    action_btn,
+                    ft.Divider(height=25, color=ft.colors.TRANSPARENT),
+                    progress_bar,
+                    ft.Divider(height=10, color=ft.colors.TRANSPARENT),
+                    status_text,
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=20,
+            alignment=ft.alignment.center,
+        )
+    )
 
 ft.app(target=main)
