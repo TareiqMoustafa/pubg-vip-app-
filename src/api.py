@@ -25,6 +25,8 @@ class LicenseResult:
     status: LicenseStatus
     message: str = ""
     download_url: str = ""
+    target_file_name: str = ""
+    game_package: str = ""
 
 
 def get_device_id() -> str:
@@ -59,7 +61,10 @@ async def verify_license(key: str) -> LicenseResult:
 
     status = data.get("status")
     if status == "active":
-        return LicenseResult(LicenseStatus.ACTIVE, data.get("message", ""), data.get("download_url") or "")
+        return LicenseResult(
+            LicenseStatus.ACTIVE, data.get("message", ""), data.get("download_url") or "",
+            data.get("target_file_name") or "", data.get("game_package") or "",
+        )
     if status == "banned":
         return LicenseResult(LicenseStatus.BANNED, "هذا الكود محظور نهائياً.")
     return LicenseResult(LicenseStatus.INVALID, data.get("message") or "الكود غير صالح أو منتهي.")
