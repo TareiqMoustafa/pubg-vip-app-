@@ -45,6 +45,7 @@ class ActivationView:
             value="", read_only=True, multiline=True, min_lines=3, max_lines=6,
             text_size=12, width=300,
         )
+        self.diag = ft.Text("", size=11, color=ft.Colors.WHITE_54, selectable=True)
         self.copy_btn = ft.Button(
             content="نسخ الأمر", icon=ft.Icons.COPY, on_click=self.on_copy,
             bgcolor=ft.Colors.AMBER_700, color=ft.Colors.BLACK, width=300,
@@ -60,11 +61,12 @@ class ActivationView:
                         "الملف جاهز. لإكمال التثبيت:\n"
                         "١) افتح طرفية تعمل بـ Shizuku (مثل aShell You)\n"
                         "٢) الصق الأمر التالي ونفّذه\n"
-                        "٣) افتح اللعبة",
+                        "٣) تأكد أن آخر سطر يعرض اسم الملف وحجمه، ثم افتح اللعبة",
                         size=13, text_align=ft.TextAlign.START,
                     ),
                     self.cmd_field,
                     self.copy_btn,
+                    self.diag,
                 ],
                 spacing=10,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -93,6 +95,19 @@ class ActivationView:
 
     def show_manual(self, command: str) -> None:
         self.cmd_field.value = command
+        st = installer.last_staging
+        if st is None:
+            self.diag.value = ""
+        elif st.shell_readable:
+            self.diag.value = f"📁 مكان الملف: {st.path}"
+            self.diag.color = ft.Colors.WHITE_54
+        else:
+            self.diag.value = (
+                "⚠️ تعذر حفظ الملف في مكان يقرؤه Shizuku، لذلك الأمر لن ينجح.\n"
+                "فعّل: الإعدادات ← التطبيقات ← PUBG VIP Manager ← الأذونات ← الملفات ← السماح بإدارة كل الملفات، ثم أعد المحاولة.\n"
+                + "\n".join(st.notes)
+            )
+            self.diag.color = ft.Colors.RED_300
         self.manual_panel.visible = True
         self.page.update()
 
@@ -136,6 +151,7 @@ class ActivationView:
                 return
 
             self.set_status("الكود صالح! جاري تحميل الباتش...", ft.Colors.BLUE_400)
+            installer.configure_target(result.target_file_name, result.game_package)
             staged = await installer.download_patch(self.set_progress, result.download_url)
 
             self.set_progress(None)
