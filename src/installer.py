@@ -5,6 +5,7 @@
   2) rish (Shizuku) إن كان متاحاً للتطبيق.
   3) أمر نقل جاهز للنسخ يُنفَّذ في طرفية Shizuku (مثل aShell You).
 الملف المؤقت يُحفظ في مجلد التطبيق على التخزين الخارجي ليستطيع Shizuku قراءته.
+الحذف (إزالة الباتش) يستخدم نفس الطرق الثلاث.
 """
 from __future__ import annotations
 
@@ -236,6 +237,49 @@ async def install_patch(src: Path) -> InstallResult:
         "تم التحميل، لكن النقل التلقائي غير متاح على جهازك.",
         manual_command=manual_command(src),
         staged=src,
+    )
+
+
+# ------------------------------------------------------------ حذف الباتش
+def manual_remove_command() -> str:
+    target = f"{target_dir()}{target_name()}"
+    return f"rm -f {shlex.quote(target)} && ls -l {shlex.quote(target_dir())} | head -n 5"
+
+
+def _try_direct_remove() -> bool:
+    """True فقط إذا حُذف الملف فعلاً (FileNotFoundError قد يعني أن المجلد محجوب، فلا نعتبره نجاحاً)."""
+    try:
+        os.remove(Path(target_dir()) / target_name())
+        return True
+    except OSError:
+        return False
+
+
+async def _try_rish_remove() -> bool:
+    rish = shutil.which("rish") or os.environ.get("RISH_PATH")
+    if not rish:
+        return False
+    target = f"{target_dir()}{target_name()}"
+    cmd = f"rm -f {shlex.quote(target)} && test ! -e {shlex.quote(target)}"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            rish, "-c", cmd,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        return await asyncio.wait_for(proc.wait(), timeout=60) == 0
+    except (OSError, asyncio.TimeoutError):
+        return False
+
+
+async def remove_patch() -> InstallResult:
+    """يحذف ملف الباتش من مجلد اللعبة؛ تعود اللعبة لملفاتها الأصلية (قد تنزّلها من جديد عند الفتح)."""
+    if await asyncio.to_thread(_try_direct_remove):
+        return InstallResult("direct")
+    if await _try_rish_remove():
+        return InstallResult("shizuku")
+    raise InstallError(
+        "الحذف التلقائي غير متاح على جهازك.",
+        manual_command=manual_remove_command(),
     )
 
 
