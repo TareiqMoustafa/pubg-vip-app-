@@ -15,7 +15,7 @@ import re
 import shlex
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -39,31 +39,89 @@ class InstallResult:
     method: str  # "direct" | "shizuku"
 
 
+# ------------------------------------------------------------ هدف النقل (يحدده السيرفر)
+FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,100}\.pak$")
+_override_name = ""
+_override_pkg = ""
+
+
+def configure_target(file_name: str = "", game_package: str = "") -> None:
+    """اسم الباتش وحزمة اللعبة يتغيران مع كل تحديث/منطقة؛ السيرفر يرسلهما بدون إعادة بناء التطبيق."""
+    global _override_name, _override_pkg
+    _override_name = file_name if FILE_RE.match(file_name or "") else ""
+    _override_pkg = game_package if PKG_RE.match(game_package or "") else ""
+
+
+def target_name() -> str:
+    return _override_name or CFG.TARGET_FILE_NAME
+
+
+def target_dir() -> str:
+    if _override_pkg:
+        return (f"/storage/emulated/0/Android/data/{_override_pkg}/files/UE4Game/"
+                "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks/")
+    return CFG.TARGET_DIR
+
+
 # ------------------------------------------------------------ مجلد التجهيز
-def _package_name() -> Optional[str]:
-    try:
-        name = Path("/proc/self/cmdline").read_bytes().split(b"\0")[0].decode()
-    except OSError:
-        return None
-    return name if PKG_RE.match(name) and Path("/storage/emulated/0/Android").exists() else None
+STORAGE_ROOT = "/storage/emulated"
 
 
-def staging_dir() -> Path:
-    candidates = []
-    pkg = _package_name()
-    if pkg:  # مجلد التطبيق الخارجي: لا يحتاج صلاحية، ويقرأه Shizuku
-        candidates.append(Path(f"/storage/emulated/0/Android/data/{pkg}/files"))
-    candidates.append(Path(tempfile.gettempdir()))
+@dataclass
+class Staging:
+    path: Path
+    shell_readable: bool          # هل يستطيع Shizuku/الشل قراءة هذا المجلد؟
+    notes: list = field(default_factory=list)
+
+
+last_staging: Optional[Staging] = None
+
+
+def _detect_app() -> tuple:
+    """يستخرج (اسم الحزمة، رقم المستخدم) من مسار الكاش، وبديله cmdline."""
+    uid, pkg = "0", None
+    m = re.match(r"^/data/(?:user/(\d+)/|data/)([a-z][\w.]*)/", tempfile.gettempdir() + "/")
+    if m:
+        uid, pkg = m.group(1) or "0", m.group(2)
+    if not pkg:
+        try:
+            name = Path("/proc/self/cmdline").read_bytes().split(b"\0")[0].decode()
+        except OSError:
+            name = ""
+        if PKG_RE.match(name):
+            pkg = name
+    return pkg, uid
+
+
+def _probe(d: Path) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / ".probe"
+    p.write_bytes(b"1")
+    p.unlink()
+
+
+def staging_dir() -> Staging:
+    """يختار مجلداً يكتب فيه التطبيق ويقرؤه Shizuku (المجلد الداخلي /data/... لا يقرؤه الشل)."""
+    global last_staging
+    pkg, uid = _detect_app()
+    notes: list = []
+    candidates: list = []
+    if pkg:
+        root = Path(f"{STORAGE_ROOT}/{uid}")
+        candidates += [
+            root / "Android" / "media" / pkg,
+            root / "Android" / "data" / pkg / "files",
+            root / "Download" / "PUBG_VIP",
+        ]
     for d in candidates:
         try:
-            d.mkdir(parents=True, exist_ok=True)
-            probe = d / ".probe"
-            probe.write_bytes(b"1")
-            probe.unlink()
-            return d
-        except OSError:
-            continue
-    return Path(tempfile.gettempdir())
+            _probe(d)
+            last_staging = Staging(d, True, notes)
+            return last_staging
+        except OSError as ex:
+            notes.append(f"{d}: {ex.__class__.__name__}")
+    last_staging = Staging(Path(tempfile.gettempdir()), False, notes)
+    return last_staging
 
 
 # ------------------------------------------------------------ التحميل
@@ -114,7 +172,7 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb) -> None:
 
 
 async def download_patch(on_progress: ProgressCb, url: str = "") -> Path:
-    dest = staging_dir() / CFG.TARGET_FILE_NAME
+    dest = staging_dir().path / target_name()
     errors: list[str] = []
     for src in _sources(url):
         for attempt in range(1, CFG.DOWNLOAD_RETRIES + 1):
@@ -136,14 +194,17 @@ async def download_patch(on_progress: ProgressCb, url: str = "") -> Path:
 
 # ------------------------------------------------------------ النقل
 def manual_command(src: Path) -> str:
-    target = f"{CFG.TARGET_DIR}{CFG.TARGET_FILE_NAME}"
-    return f"mkdir -p {shlex.quote(CFG.TARGET_DIR)} && cp -f {shlex.quote(str(src))} {shlex.quote(target)}"
+    target = f"{target_dir()}{target_name()}"
+    return (
+        f"mkdir -p {shlex.quote(target_dir())} && cp -f {shlex.quote(str(src))} {shlex.quote(target)}"
+        f" && ls -l {shlex.quote(target)}"
+    )
 
 
 def _try_direct(src: Path) -> bool:
     try:
-        Path(CFG.TARGET_DIR).mkdir(parents=True, exist_ok=True)
-        dst = Path(CFG.TARGET_DIR) / CFG.TARGET_FILE_NAME
+        Path(target_dir()).mkdir(parents=True, exist_ok=True)
+        dst = Path(target_dir()) / target_name()
         shutil.copyfile(src, dst)
         return dst.stat().st_size == src.stat().st_size
     except OSError:
@@ -154,7 +215,7 @@ async def _try_rish(src: Path) -> bool:
     rish = shutil.which("rish") or os.environ.get("RISH_PATH")
     if not rish:
         return False
-    target = f"{CFG.TARGET_DIR}{CFG.TARGET_FILE_NAME}"
+    target = f"{target_dir()}{target_name()}"
     cmd = f"{manual_command(src)} && test -s {shlex.quote(target)}"
     try:
         proc = await asyncio.create_subprocess_exec(
