@@ -1,14 +1,22 @@
-"""الإعدادات المركزية - عدّل القيم هنا فقط."""
+"""الإعدادات المركزية - عدّل القيم هنا فقط.
+
+رابط الباتش لا يُكتب هنا في الغالب: ضعه من لوحة التحكم (/admin ← الإعدادات ← ملف الباتش)
+فيصل للتطبيق تلقائياً بدون إعادة بناء. القيمة أدناه احتياطية فقط إن لم يرسل السيرفر رابطاً.
+"""
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Config:
+    # نسخة التطبيق (يجب أن تطابق version في pyproject.toml)
+    APP_VERSION: str = "1.3.0"
+
     # سيرفر التحقق
     SERVER_URL: str = "https://pak-license-server.vercel.app"
     VERIFY_ENDPOINT: str = "/api/verify"
+    APP_CONFIG_ENDPOINT: str = "/api/app-config"
 
-    # ملف الباتش
+    # ملف الباتش (احتياطي؛ الأصل من لوحة التحكم)
     PATCH_DOWNLOAD_URL: str = "https://files.catbox.moe/nwnc4y.pak"
     # روابط بديلة تُجرَّب تلقائياً إذا فشل الرابط الأساسي (GitHub Releases مثلاً)
     PATCH_MIRRORS: tuple = ()
@@ -30,7 +38,7 @@ class Config:
     )
 
     # الواجهة
-    APP_TITLE: str = "PUBG VIP Manager Pro"
+    APP_TITLE: str = "PUBG VIP Manager"
 
 
 CFG = Config()
