@@ -16,6 +16,7 @@ import re
 import shlex
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -76,6 +77,8 @@ class Staging:
 
 
 last_staging: Optional[Staging] = None
+# إحصاءات التحميل الحالي (للواجهة): البايتات المحمّلة والإجمالي والسرعة بالبايت/ثانية
+progress_info: dict = {"done": 0, "total": 0, "speed": 0.0}
 
 
 def _detect_app() -> tuple:
@@ -146,7 +149,7 @@ def _sources(preferred: str) -> list[str]:
     return out
 
 
-async def _download_once(url: str, dest: Path, on_progress: ProgressCb) -> None:
+async def _download_once(url: str, dest: Path, on_progress: ProgressCb, expected_sha: str = "") -> None:
     part = dest.with_suffix(dest.suffix + ".part")
     sha = hashlib.sha256()
     headers = {"User-Agent": CFG.USER_AGENT, "Accept": "*/*"}
@@ -156,15 +159,20 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb) -> None:
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
                 done = 0
+                t0 = time.monotonic()
+                progress_info.update(done=0, total=total, speed=0.0)
                 with open(part, "wb") as f:
                     async for chunk in r.aiter_bytes(CFG.CHUNK_SIZE):
                         f.write(chunk)
                         sha.update(chunk)
                         done += len(chunk)
+                        elapsed = max(time.monotonic() - t0, 0.001)
+                        progress_info.update(done=done, total=total, speed=done / elapsed)
                         on_progress(done / total if total else None)
         if done == 0 or (total and done != total):
             raise InstallError("الملف المحمَّل ناقص أو فارغ.")
-        if CFG.PATCH_SHA256 and sha.hexdigest().lower() != CFG.PATCH_SHA256.lower():
+        want = (expected_sha or CFG.PATCH_SHA256 or "").strip().lower()
+        if want and sha.hexdigest().lower() != want:
             raise InstallError("فشل التحقق من سلامة الملف (SHA-256).")
         os.replace(part, dest)
     except BaseException:
@@ -172,14 +180,14 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb) -> None:
         raise
 
 
-async def download_patch(on_progress: ProgressCb, url: str = "") -> Path:
+async def download_patch(on_progress: ProgressCb, url: str = "", sha256: str = "") -> Path:
     dest = staging_dir().path / target_name()
     errors: list[str] = []
     for src in _sources(url):
         for attempt in range(1, CFG.DOWNLOAD_RETRIES + 1):
             try:
                 on_progress(None)
-                await _download_once(src, dest, on_progress)
+                await _download_once(src, dest, on_progress, sha256)
                 return dest
             except InstallError:
                 raise
@@ -281,6 +289,39 @@ async def remove_patch() -> InstallResult:
         "الحذف التلقائي غير متاح على جهازك.",
         manual_command=manual_remove_command(),
     )
+
+
+# ------------------------------------------------------------ فحص الجاهزية
+def diagnostics() -> list:
+    """قائمة (العنوان، الحالة ok|warn|info، التفصيل) لفحوصات الجهاز؛ لا تغيّر شيئاً على الجهاز."""
+    out: list = []
+    st = staging_dir()
+    try:
+        free = shutil.disk_usage(st.path).free / (1024 * 1024)
+        out.append(("المساحة الحرة", "ok" if free >= 200 else "warn", f"{free:,.0f} MB"))
+    except OSError:
+        out.append(("المساحة الحرة", "info", "تعذر القياس"))
+    out.append((
+        "مجلد التجهيز", "ok" if st.shell_readable else "warn",
+        "يقرؤه Shizuku" if st.shell_readable else "غير مرئي لـ Shizuku — فعّل «إدارة كل الملفات» للتطبيق",
+    ))
+    out.append((
+        "Shizuku (rish)", "ok" if (shutil.which("rish") or os.environ.get("RISH_PATH")) else "info",
+        "متاح للتطبيق" if (shutil.which("rish") or os.environ.get("RISH_PATH")) else "غير متاح — سيظهر أمر نقل يدوي",
+    ))
+    try:
+        writable = os.access(target_dir(), os.W_OK)
+        out.append(("الكتابة المباشرة لمجلد اللعبة", "ok" if writable else "info",
+                    "مسموحة" if writable else "غير مسموحة (طبيعي على أندرويد 11+)"))
+    except OSError:
+        out.append(("الكتابة المباشرة لمجلد اللعبة", "info", "غير متاحة"))
+    try:
+        exists = os.path.isdir(target_dir())
+        out.append(("مجلد اللعبة", "ok" if exists else "info",
+                    "ظاهر للتطبيق" if exists else "غير ظاهر للتطبيق (لا يعني أن اللعبة غير مثبّتة)"))
+    except OSError:
+        out.append(("مجلد اللعبة", "info", "غير ظاهر للتطبيق"))
+    return out
 
 
 def cleanup(path: Optional[Path] = None) -> None:
