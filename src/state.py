@@ -32,3 +32,16 @@ def save(**changes) -> None:
         p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass
+
+
+def add_log(kind: str, message: str) -> None:
+    """سجل نشاط محلي (آخر 60 حدثاً)."""
+    from datetime import datetime, timezone
+    entries = load().get("log") or []
+    entries.append({"t": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "k": kind, "m": message})
+    save(log=entries[-60:])
+
+
+def get_log() -> list:
+    entries = load().get("log")
+    return entries if isinstance(entries, list) else []
