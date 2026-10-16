@@ -9,7 +9,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Config:
     # نسخة التطبيق (يجب أن تطابق version في pyproject.toml)
-    APP_VERSION: str = "1.3.0"
+    APP_VERSION: str = "1.4.0"
 
     # سيرفر التحقق
     SERVER_URL: str = "https://pak-license-server.vercel.app"
