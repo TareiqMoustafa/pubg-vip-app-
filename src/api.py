@@ -40,6 +40,8 @@ class LicenseResult:
     notice: str = ""
     support_url: str = ""
     update_url: str = ""
+    patch_sha256: str = ""
+    patch_notes: str = ""
 
 
 def get_device_id() -> str:
@@ -110,6 +112,8 @@ async def verify_license(key: str) -> LicenseResult:
             total_days=_int(data.get("total_days")),
             notice=data.get("notice") or "",
             support_url=data.get("support_url") or "",
+            patch_sha256=str(data.get("patch_sha256") or ""),
+            patch_notes=str(data.get("patch_notes") or ""),
         )
     if status == "banned":
         return LicenseResult(LicenseStatus.BANNED, "هذا الكود محظور نهائياً.")
