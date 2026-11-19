@@ -1,19 +1,13 @@
 [project]
-name = "pubg_vip_manager"
-version = "1.4.0"
-description = "PUBG VIP Patch Manager"
-readme = "README.md"
-requires-python = ">=3.12,<3.14"
+name = "Tareiq_Hack_pubg_vip"
+version = "4.0.0"
+description = "Ultra VIP Archive Extractor, Folder Deployer & License System"
+requires-python = ">=3.10"
 dependencies = [
-    "flet==1.0.*",
-    "httpx>=0.27,<1.0",
+    "flet",
+    "requests"
 ]
 
 [tool.flet]
-product = "PUBG VIP Manager"
-org = "com.pubg.vip"
-company = "PUBG VIP"
-copyright = "Copyright (C) 2026"
-
-[tool.flet.app]
-path = "src"
+product = "PUBG VIP Ultra"
+org = "com.pubg.vip.ultra"
