@@ -1,13 +1,19 @@
 [project]
-name = "Tareiq_Hack_pubg_vip"
-version = "4.0.0"
-description = "Ultra VIP Archive Extractor, Folder Deployer & License System"
-requires-python = ">=3.10"
+name = "pubg_vip_manager"
+version = "2.0.0"
+description = "PUBG VIP Patch & Folder Manager — Crafted by Tareiq"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "flet",
-    "requests"
+    "flet==1.0.*",
+    "httpx>=0.27,<1.0",
 ]
 
 [tool.flet]
-product = "PUBG VIP Ultra"
-org = "com.pubg.vip.ultra"
+product = "PUBG VIP Manager"
+org = "com.tareiq.pubgvip"
+company = "Tareiq Dev"
+copyright = "Copyright (C) 2026 Tareiq"
+
+[tool.flet.app]
+path = "src"
