@@ -1,44 +1,37 @@
-"""الإعدادات المركزية لتطبيق Lader Tareiq."""
-from dataclasses import dataclass
+"""إعدادات وثوابت تطبيق Lader Tareiq."""
+from __future__ import annotations
 
+import os
 
-@dataclass(frozen=True)
-class Config:
-    # هوية التطبيق والمطور
-    APP_TITLE: str = "Lader Tareiq"
-    APP_VERSION: str = "2.1.0"
-    OTA_VERSION: str = "1.0.0"
-    DEVELOPER_NAME: str = "Lader Tareiq"
-    DEVELOPER_TAGLINE: str = "Lader Tareiq • VIP Patch & Shizuku Suite"
+APP_TITLE: str = "Lader Tareiq"
+DEVELOPER_NAME: str = "Lader Tareiq"
+DEVELOPER_TAGLINE: str = "Smart License • OTA • Resource Engine"
+APP_VERSION: str = "2.2.0"
+OTA_VERSION: str = "1.0.0"
 
-    # سيرفر التحقق والتحديثات
-    SERVER_URL: str = "https://pak-license-server.vercel.app"
-    VERIFY_ENDPOINT: str = "/api/verify"
-    APP_CONFIG_ENDPOINT: str = "/api/app-config"
-    HEALTH_ENDPOINT: str = "/api/health"
-    OTA_ENDPOINT: str = "/api/ota-bundle"
+SERVER_URL: str = os.environ.get(
+    "LADER_SERVER_URL",
+    "https://pak-license-server.vercel.app",
+).rstrip("/")
 
-    # ملف/أرشيف الباتش الاحتياطي
-    PATCH_DOWNLOAD_URL: str = "https://files.catbox.moe/nwnc4y.pak"
-    PATCH_MIRRORS: tuple = ()
-    PATCH_SHA256: str = ""
-    TARGET_FILE_NAME: str = "res_pufferpatch_4.6.1.21589.pak"
-    FALLBACK_FOLDER_NAME: str = "vip_patch_folder"
-    TARGET_DIR: str = (
-        "/storage/emulated/0/Android/data/com.tencent.ig/files/UE4Game/"
-        "ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks/"
-    )
+DEFAULT_SUPPORT_URL: str = "https://t.me/LaderTareiqSupport"
+DEFAULT_UPDATE_URL: str = ""
+DEFAULT_GAME_PACKAGE: str = "com.tencent.ig"
+DEFAULT_TARGET_FILE: str = "res_pufferpatch.pak"
+DEFAULT_DEPLOY_MODE: str = "auto"
 
-    # الشبكة
-    VERIFY_TIMEOUT: float = 20.0
-    DOWNLOAD_TIMEOUT: float = 300.0
-    OTA_TIMEOUT: float = 25.0
-    DOWNLOAD_RETRIES: int = 3
-    CHUNK_SIZE: int = 64 * 1024
-    USER_AGENT: str = (
-        "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
-    )
+REQUEST_TIMEOUT: float = 12.0
+DOWNLOAD_TIMEOUT: float = 45.0
+MAX_DOWNLOAD_BYTES: int = 512 * 1024 * 1024
 
-
-CFG = Config()
+COLOR_BG: str = "#05070E"
+COLOR_BG_ALT: str = "#0B1024"
+COLOR_CARD: str = "#0E152E"
+COLOR_CARD_BORDER: str = "#1E2D58"
+COLOR_CYAN: str = "#19E3FF"
+COLOR_VIOLET: str = "#8B5CFF"
+COLOR_PINK: str = "#FF2E93"
+COLOR_GREEN: str = "#38FFA2"
+COLOR_AMBER: str = "#FFB020"
+COLOR_TEXT: str = "#EEF3FF"
+COLOR_MUTED: str = "#8A98C2"
