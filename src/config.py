@@ -1,15 +1,15 @@
-"""الإعدادات المركزية لتطبيق Tareiq Nexus VIP."""
+"""الإعدادات المركزية لتطبيق Lader Tareiq."""
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Config:
     # هوية التطبيق والمطور
-    APP_TITLE: str = "Lader Tar4iq"
+    APP_TITLE: str = "Lader Tareiq"
     APP_VERSION: str = "2.1.0"
     OTA_VERSION: str = "1.0.0"
-    DEVELOPER_NAME: str = "Tar4iq"
-    DEVELOPER_TAGLINE: str = "Tareiq Core • Precision Patch & Shizuku Suite"
+    DEVELOPER_NAME: str = "Lader Tareiq"
+    DEVELOPER_TAGLINE: str = "Lader Tareiq • VIP Patch & Shizuku Suite"
 
     # سيرفر التحقق والتحديثات
     SERVER_URL: str = "https://pak-license-server.vercel.app"
