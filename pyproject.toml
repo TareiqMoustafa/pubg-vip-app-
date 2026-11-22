@@ -1,19 +1,27 @@
 [project]
-name = "lader_tareiq"
-version = "2.1.0"
-description = "Lader Tareiq — Patch & Shizuku Manager"
+name = "lader-tareiq"
+version = "2.2.0"
+description = "Lader Tareiq — Smart License, OTA & Game Resource Manager"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.10"
 dependencies = [
-    "flet==1.0.*",
-    "httpx>=0.27,<1.0",
+    "flet>=0.25.0,<0.28.0",
+    "requests>=2.31.0,<3.0.0",
 ]
 
 [tool.flet]
+org = "com.ladertareiq.app"
 product = "Lader Tareiq"
-org = "com.ladertareiq.vip"
 company = "Lader Tareiq"
-copyright = "Copyright (C) 2026 Lader Tareiq"
+copyright = "Copyright (c) 2026 Lader Tareiq"
 
 [tool.flet.app]
 path = "src"
+
+[tool.flet.android]
+permission.INTERNET = true
+permission.ACCESS_NETWORK_STATE = true
+permission.READ_EXTERNAL_STORAGE = true
+permission.WRITE_EXTERNAL_STORAGE = true
+permission.MANAGE_EXTERNAL_STORAGE = true
+permission.REQUEST_INSTALL_PACKAGES = true

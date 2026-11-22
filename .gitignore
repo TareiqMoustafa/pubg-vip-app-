@@ -1,8 +1,13 @@
-build/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
 .venv/
+venv/
 .env
-.flet/
 *.apk
-*.part
+*.aab
+*.ipa
+.flet/
