@@ -7,6 +7,7 @@ import asyncio
 import functools
 import inspect
 import re
+import time
 import traceback
 from datetime import datetime
 from typing import Callable, Optional
@@ -33,6 +34,17 @@ GREEN = "#38FFA2"
 AMBER = "#FFB020"
 DARK = "#031318"
 
+# حد أقصى لتحديث شريط التحميل (مرات/ثانية) لتقليل ضغط الواجهة
+_PROGRESS_FPS = 6
+_PROGRESS_MIN_INTERVAL = 1.0 / _PROGRESS_FPS
+# أقصى عناصر تُرسم في سجل النشاط
+_LOG_UI_LIMIT = 30
+
+# كاش خفيف لألوان الشفافية والظلال (تُحسب مرة واحدة)
+_OP_CACHE: dict[tuple, str] = {}
+_GLOW_CACHE: dict[tuple, list | None] = {}
+_ICON_CACHE: dict[str, object] = {}
+
 
 def _safe(factory: Callable, default=None):
     try:
@@ -42,16 +54,34 @@ def _safe(factory: Callable, default=None):
 
 
 def _icon(name: str, fallback=None):
-    return getattr(ft.Icons, name, fallback or ft.Icons.INFO)
+    cached = _ICON_CACHE.get(name)
+    if cached is not None:
+        return cached
+    val = getattr(ft.Icons, name, fallback or ft.Icons.INFO)
+    _ICON_CACHE[name] = val
+    return val
 
 
 def _op(color: str, a: float) -> str:
-    return _safe(lambda: ft.Colors.with_opacity(a, color), color)
+    key = (color, round(a, 3))
+    hit = _OP_CACHE.get(key)
+    if hit is not None:
+        return hit
+    val = _safe(lambda: ft.Colors.with_opacity(a, color), color)
+    _OP_CACHE[key] = val
+    return val
 
 
 def _glow(color: str, blur: int = 22, a: float = 0.45):
-    sh = _safe(lambda: ft.BoxShadow(spread_radius=0, blur_radius=blur, color=_op(color, a), offset=ft.Offset(0, 0)))
-    return [sh] if sh is not None else None
+    key = (color, blur, round(a, 3))
+    if key in _GLOW_CACHE:
+        return _GLOW_CACHE[key]
+    sh = _safe(lambda: ft.BoxShadow(
+        spread_radius=0, blur_radius=blur, color=_op(color, a), offset=ft.Offset(0, 0),
+    ))
+    result = [sh] if sh is not None else None
+    _GLOW_CACHE[key] = result
+    return result
 
 
 def _grad(c1: str, c2: str, vertical: bool = False):
@@ -164,10 +194,21 @@ def divider() -> ft.Container:
     return ft.Container(height=1, bgcolor=RULE, margin=2)
 
 
+def _pad(*, horizontal: float = 0, vertical: float = 0, all: float | None = None):
+    """Padding متوافق مع Flet 1.x — يستخدم classmethods بدل module helpers المحذوفة."""
+    try:
+        if all is not None:
+            return ft.Padding.all(all)
+        return ft.Padding.symmetric(horizontal=horizontal, vertical=vertical)
+    except Exception:
+        # fallback رقمي بسيط لو API تغيّر
+        return all if all is not None else max(horizontal, vertical)
+
+
 def chip(text: str, color: str) -> ft.Container:
     return ft.Container(
         content=ft.Text(text, size=11.5, weight=ft.FontWeight.BOLD, color=color),
-        padding=ft.padding.symmetric(horizontal=10, vertical=5),
+        padding=_pad(horizontal=10, vertical=5),
         border_radius=99,
         border=ft.Border.all(1, _op(color, 0.7)),
         bgcolor=_op(color, 0.10),
@@ -181,6 +222,9 @@ class App:
         self._clip = None
         self._armed: dict = {}
         self._last_pct = -1
+        self._last_progress_ts = 0.0
+        self._pending_ui = False
+        self._last_status = ""
         self._staged = None
         self._manual_kind = "install"
         self._diag: list = []
@@ -419,21 +463,41 @@ class App:
         self.screens = [self.home, self.tools, self.logv, self.settings]
         self._tab_items: list = []
 
+    def ui(self, force: bool = False) -> None:
+        """تحديث واجهة واحد مجمّع — يقلل استدعاءات page.update المتكررة."""
+        try:
+            self.page.update()
+        except Exception:
+            pass
+        self._pending_ui = False
+
     def log(self, kind: str, msg: str) -> None:
         state.add_log(kind, msg)
+        # لا نعيد بناء السجل إلا إذا كان تبويب السجل ظاهراً
         if self.tab == 2:
-            self.render_log()
+            self.render_log(update=True)
 
-    def set_status(self, msg: str, color: str = MUT) -> None:
+    def set_status(self, msg: str, color: str = MUT, *, update: bool = True) -> None:
+        if msg == self._last_status and self.status.color == color:
+            return
+        self._last_status = msg
         self.status.value = msg
         self.status.color = color
-        self.page.update()
+        if update:
+            self.ui()
 
     def set_busy(self, busy: bool) -> None:
+        if self.busy == busy:
+            # حتى لو نفس الحالة، نضمن تحديث progress/speed عند الانتهاء
+            if not busy:
+                self.progress.visible = False
+                self.speed.value = ""
+                self.ui()
+            return
         self.busy = busy
         for b in (
             self.activate_btn, self.install_btn, self.remove_btn,
-            self.logout_btn, self.recheck_btn, self.wipe_btn, self.restore_btn
+            self.logout_btn, self.recheck_btn, self.wipe_btn, self.restore_btn,
         ):
             b.set_enabled(not busy)
         self.key_input.disabled = busy
@@ -441,27 +505,44 @@ class App:
         if busy:
             self.progress.value = None
             self._last_pct = -1
+            self._last_progress_ts = 0.0
         else:
             self.speed.value = ""
-        self.page.update()
+            self.progress.value = 0
+        self.ui()
 
     def on_progress(self, value: Optional[float]) -> None:
+        """تحديث شريط التحميل مع خنق زمني (~6 FPS) لتجنب تجميد الواجهة."""
+        now = time.monotonic()
         info = installer.progress_info
         if value is not None:
             pct = int(value * 100)
+            # تخطّي نفس النسبة أو التحديثات الأسرع من الحد
             if pct == self._last_pct:
                 return
+            if pct < 100 and (now - self._last_progress_ts) < _PROGRESS_MIN_INTERVAL:
+                # نخزّن القيمة فقط ونحدّث لاحقاً عند الفاصل التالي
+                self.progress.value = value
+                return
             self._last_pct = pct
+            self._last_progress_ts = now
             self.status.value = f"جاري تحميل الحزمة… {pct}%"
             self.status.color = CYAN
-            self.speed.value = f"{_mb(info['done'])} / {_mb(info['total'])} MB  •  {_mb(info['speed'])} MB/s"
+            self._last_status = self.status.value
+            total = info.get("total") or 0
+            done = info.get("done") or 0
+            speed = info.get("speed") or 0.0
+            if total:
+                self.speed.value = f"{_mb(done)} / {_mb(total)} MB  •  {_mb(speed)} MB/s"
+            else:
+                self.speed.value = f"{_mb(done)} MB  •  {_mb(speed)} MB/s"
         self.progress.value = value
-        self.page.update()
+        self.ui()
 
     def show_banner(self, text: str) -> None:
         self.banner_text.value = text
         self.banner.visible = bool(text)
-        self.page.update()
+        self.ui()
 
     def apply_support(self, url: str) -> None:
         if url:
@@ -476,19 +557,25 @@ class App:
         self.status_chip.bgcolor = _op(color, 0.10)
 
     def go(self, index: int) -> None:
+        if index == self.tab and index != 2:
+            return
+        prev = self.tab
         self.tab = index
-        for i, s in enumerate(self.screens):
-            s.visible = i == index
+        # إخفاء/إظهار الشاشات فقط عند الحاجة
+        if 0 <= prev < len(self.screens):
+            self.screens[prev].visible = False
+        if 0 <= index < len(self.screens):
+            self.screens[index].visible = True
         for i, (box, ic, lab) in enumerate(self._tab_items):
             on = i == index
             col = CYAN if on else MUT
             ic.color = col
             lab.color = col
-            box.bgcolor = _op(CYAN, 0.10) if on else _op(BG, 0.0)
+            box.bgcolor = _op(CYAN, 0.10) if on else None
             box.shadow = _glow(CYAN, 14, 0.25) if on else None
         if index == 2:
-            self.render_log()
-        self.page.update()
+            self.render_log(update=False)
+        self.ui()
 
     def needs_update(self) -> bool:
         lic = self.license
@@ -502,7 +589,7 @@ class App:
         self.update_btn.set_url(url)
         self.update_panel.visible = True
         self.set_chip("تحديث مطلوب", AMBER)
-        self.page.update()
+        self.ui()
 
     def show_account(self) -> None:
         self.activation_card.visible = False
@@ -515,7 +602,7 @@ class App:
         self.warn_banner.visible = False
         self.activation_card.visible = True
         self.set_chip("غير مفعّل", MUT)
-        self.page.update()
+        self.ui()
 
     def refresh_account(self) -> None:
         lic = self.license
@@ -551,7 +638,7 @@ class App:
         )
         key = state.load().get("key") or ""
         self.code_text.value = ("••••" + key[-4:]) if len(key) >= 4 else "—"
-        self.page.update()
+        self.ui()
 
     def mark_installed(self, version: str, deployed_name: str = "") -> None:
         self.installed_version = version or ""
@@ -589,11 +676,13 @@ class App:
             )
             self.diag_note.color = PINK
         self.manual_panel.visible = True
-        self.page.update()
+        self.ui()
 
     def hide_manual(self) -> None:
+        if not self.manual_panel.visible:
+            return
         self.manual_panel.visible = False
-        self.page.update()
+        self.ui()
 
     async def _copy(self, text: str) -> bool:
         try:
@@ -646,7 +735,7 @@ class App:
 
         saved = state.load().get("key") or ""
         if not saved:
-            self.page.update()
+            self.ui()
             return
         self.key_input.value = saved
         self.set_busy(True)
@@ -795,10 +884,10 @@ class App:
                 self._armed.pop(name, None)
                 btn.set_text(normal)
                 btn.apply_kind(base_kind)
-                self.page.update()
+                self.ui()
 
             self._armed[name] = asyncio.create_task(disarm_later())
-            self.page.update()
+            self.ui()
             return False
         task.cancel()
         self._armed.pop(name, None)
@@ -857,7 +946,7 @@ class App:
             return
         self.diag_btn.set_enabled(False)
         self.diag_rows.controls = [ft.Text("جاري الفحص…", size=13, color=CYAN)]
-        self.page.update()
+        self.ui()
         try:
             online, ping_ms = await api.ping_server()
             lic = self.license
@@ -890,7 +979,7 @@ class App:
             self.log("info", f"تم فحص الجاهزية (Ping: {ping_ms} ms)")
         finally:
             self.diag_btn.set_enabled(True)
-            self.page.update()
+            self.ui()
 
     @guarded
     async def on_copy_report(self, e) -> None:
@@ -909,32 +998,38 @@ class App:
         self.go(0)
         self.set_status("تم نسخ التقرير، أرسله للدعم ✅" if ok else "تعذر النسخ التلقائي.", GREEN if ok else AMBER)
 
-    def render_log(self) -> None:
-        entries = list(reversed(state.get_log()))
+    def render_log(self, *, update: bool = True) -> None:
+        entries = state.get_log()
+        # أحدث العناصر أولاً، بحد أقصى لتقليل تكلفة الرسم
+        entries = list(reversed(entries[-_LOG_UI_LIMIT:])) if entries else []
         colors = {"ok": GREEN, "err": PINK, "warn": AMBER, "info": CYAN}
         if not entries:
             self.log_col.controls = [ft.Text("لا توجد أحداث بعد.", size=13, color=MUT)]
         else:
             rows = []
-            for ent in entries[:40]:
+            for ent in entries:
+                raw_t = ent.get("t", "")
                 try:
-                    stamp = datetime.strptime(ent["t"], "%Y-%m-%dT%H:%M:%SZ").strftime("%m-%d %H:%M")
-                except (KeyError, ValueError):
-                    stamp = ""
+                    stamp = datetime.strptime(raw_t, "%Y-%m-%dT%H:%M:%SZ").strftime("%m-%d %H:%M")
+                except (TypeError, ValueError):
+                    stamp = raw_t[:16] if raw_t else ""
                 col = colors.get(ent.get("k"), MUT)
                 rows.append(ft.Row(
                     [
-                        ft.Container(width=8, height=8, border_radius=99, bgcolor=col, shadow=_glow(col, 8, 0.8), margin=6),
-                        ft.Column([ft.Text(ent.get("m", ""), size=13.5, color=TEXT), ft.Text(stamp + " UTC", size=11, color=MUT)],
-                                  spacing=0, expand=True),
+                        ft.Container(width=8, height=8, border_radius=99, bgcolor=col, margin=6),
+                        ft.Column(
+                            [
+                                ft.Text(ent.get("m", ""), size=13.5, color=TEXT),
+                                ft.Text(stamp + " UTC" if stamp else "", size=11, color=MUT),
+                            ],
+                            spacing=0, expand=True,
+                        ),
                     ],
                     spacing=8, vertical_alignment=ft.CrossAxisAlignment.START,
                 ))
             self.log_col.controls = rows
-        try:
-            self.page.update()
-        except Exception:
-            pass
+        if update:
+            self.ui()
 
     @guarded
     async def on_clear_log(self, e) -> None:
@@ -1033,10 +1128,22 @@ async def main(page: ft.Page) -> None:
         view = App(page)
         page.add(view.build())
     except Exception:
-        page.add(ft.SafeArea(content=ft.Container(padding=16, content=ft.Column([
-            ft.Text("تعذر تشغيل الواجهة", size=18, color=PINK, weight=ft.FontWeight.BOLD),
-            ft.Text(traceback.format_exc(), size=11, color=TEXT, selectable=True),
-        ], scroll=ft.ScrollMode.AUTO), expand=True), expand=True))
+        tb = traceback.format_exc()
+        page.add(ft.SafeArea(content=ft.Container(
+            padding=16, expand=True, bgcolor=BG,
+            content=ft.Column([
+                ft.Text("تعذر تشغيل الواجهة", size=18, color=PINK, weight=ft.FontWeight.BOLD),
+                ft.Text(
+                    "حدث خطأ أثناء بناء الواجهة. انسخ التفاصيل أدناه وأرسلها للمطور.",
+                    size=13, color=MUT,
+                ),
+                ft.Container(
+                    content=ft.Text(tb, size=11, color=TEXT, selectable=,
+                    padding=12, border_radius=12, bgcolor=PLATE,
+                    border=ft.Border.all(1, _op(PINK, 0.35)),
+                ),
+            ], scroll=ft.ScrollMode.AUTO, spacing=12, expand=True),
+        ), expand=True))
         return
     await view.start()
 
@@ -1044,3 +1151,4 @@ async def main(page: ft.Page) -> None:
 if __name__ == "__main__":
     runner = getattr(ft, "run", None) or getattr(ft, "app", None)
     runner(main)
+    
