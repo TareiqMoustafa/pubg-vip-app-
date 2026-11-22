@@ -81,7 +81,6 @@ def build_section_card(
                                 ),
                             ],
                             spacing=2,
-                            expand=True,
                         ),
                         *header_right,
                     ],
@@ -114,5 +113,4 @@ def build_metric_tile(label: str, value: str, color: str = COLOR_CYAN) -> ft.Con
         border_radius=12,
         bgcolor="#080D1F",
         border=ft.border.all(1, "#182447"),
-        expand=True,
     )
