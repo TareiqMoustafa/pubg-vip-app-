@@ -39,6 +39,8 @@ class InstallError(Exception):
 @dataclass
 class InstallResult:
     method: str  # "direct" | "shizuku"
+    deployed_name: str = ""
+    kind: str = "pak"  # "pak" | "folder"
 
 
 # ------------------------------------------------------------ هدف النقل (يحدده السيرفر)
@@ -153,6 +155,8 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb, expected
     part = dest.with_suffix(dest.suffix + ".part")
     sha = hashlib.sha256()
     headers = {"User-Agent": CFG.USER_AGENT, "Accept": "*/*"}
+    # خنق تحديثات الواجهة (~8 مرات/ثانية) لتفادي تجميد UI أثناء التحميل
+    min_ui_interval = 0.12
     try:
         async with httpx.AsyncClient(timeout=CFG.DOWNLOAD_TIMEOUT, follow_redirects=True, headers=headers) as client:
             async with client.stream("GET", url) as r:
@@ -160,15 +164,21 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb, expected
                 total = int(r.headers.get("content-length", 0))
                 done = 0
                 t0 = time.monotonic()
+                last_ui = 0.0
                 progress_info.update(done=0, total=total, speed=0.0)
                 with open(part, "wb") as f:
                     async for chunk in r.aiter_bytes(CFG.CHUNK_SIZE):
                         f.write(chunk)
                         sha.update(chunk)
                         done += len(chunk)
-                        elapsed = max(time.monotonic() - t0, 0.001)
+                        now = time.monotonic()
+                        elapsed = max(now - t0, 0.001)
                         progress_info.update(done=done, total=total, speed=done / elapsed)
-                        on_progress(done / total if total else None)
+                        if (now - last_ui) >= min_ui_interval or (total and done >= total):
+                            last_ui = now
+                            on_progress(done / total if total else None)
+                if total and done:
+                    on_progress(1.0)
         if done == 0 or (total and done != total):
             raise InstallError("الملف المحمَّل ناقص أو فارغ.")
         want = (expected_sha or CFG.PATCH_SHA256 or "").strip().lower()
@@ -180,7 +190,14 @@ async def _download_once(url: str, dest: Path, on_progress: ProgressCb, expected
         raise
 
 
-async def download_patch(on_progress: ProgressCb, url: str = "", sha256: str = "") -> Path:
+async def download_patch(
+    on_progress: ProgressCb,
+    url: str = "",
+    sha256: str = "",
+    deploy_mode: str = "auto",
+) -> Path:
+    """يحمّل الباتش. deploy_mode يُمرَّر من الواجهة (auto|pak|folder) ويُتجاهل حالياً عند التحميل."""
+    _ = deploy_mode  # محفوظ للتوسعة المستقبلية (مجلدات/أرشيف)
     dest = staging_dir().path / target_name()
     errors: list[str] = []
     for src in _sources(url):
@@ -237,10 +254,20 @@ async def _try_rish(src: Path) -> bool:
 
 
 async def install_patch(src: Path) -> InstallResult:
+    name = target_name()
+    # محاولة حفظ نسخة احتياطية من الملف الحالي في مجلد اللعبة (إن وُجد)
+    try:
+        existing = Path(target_dir()) / name
+        if existing.is_file() and existing.stat().st_size > 0:
+            save_backup(existing)
+    except OSError:
+        pass
     if await asyncio.to_thread(_try_direct, src):
-        return InstallResult("direct")
+        save_backup(src)
+        return InstallResult(method="direct", deployed_name=name, kind="pak")
     if await _try_rish(src):
-        return InstallResult("shizuku")
+        save_backup(src)
+        return InstallResult(method="shizuku", deployed_name=name, kind="pak")
     raise InstallError(
         "تم التحميل، لكن النقل التلقائي غير متاح على جهازك.",
         manual_command=manual_command(src),
@@ -279,16 +306,55 @@ async def _try_rish_remove() -> bool:
         return False
 
 
-async def remove_patch() -> InstallResult:
+async def remove_patch(deployed_name: str = "") -> InstallResult:
     """يحذف ملف الباتش من مجلد اللعبة؛ تعود اللعبة لملفاتها الأصلية (قد تنزّلها من جديد عند الفتح)."""
+    if deployed_name and FILE_RE.match(deployed_name):
+        configure_target(deployed_name, _override_pkg)
+    name = target_name()
     if await asyncio.to_thread(_try_direct_remove):
-        return InstallResult("direct")
+        return InstallResult(method="direct", deployed_name=name, kind="pak")
     if await _try_rish_remove():
-        return InstallResult("shizuku")
+        return InstallResult(method="shizuku", deployed_name=name, kind="pak")
     raise InstallError(
         "الحذف التلقائي غير متاح على جهازك.",
         manual_command=manual_remove_command(),
     )
+
+
+# ------------------------------------------------------------ استعادة / نسخة احتياطية
+_BACKUP_DIR_NAME = ".pubg_vip_backup"
+
+
+def _backup_path(name: str = "") -> Path:
+    st = staging_dir()
+    fname = name if (name and FILE_RE.match(name)) else target_name()
+    return st.path / _BACKUP_DIR_NAME / fname
+
+
+def save_backup(src: Path) -> None:
+    """يحفظ نسخة من الملف قبل الاستبدال (أفضل جهد، لا يفشل التثبيت إن فشلت)."""
+    try:
+        dest = _backup_path(src.name)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+    except OSError:
+        pass
+
+
+async def restore_backup(deployed_name: str = "") -> InstallResult:
+    """يستعيد آخر نسخة احتياطية محفوظة إلى مجلد اللعبة."""
+    if deployed_name and FILE_RE.match(deployed_name):
+        configure_target(deployed_name, _override_pkg)
+    bak = _backup_path(deployed_name or target_name())
+    if not bak.is_file() or bak.stat().st_size == 0:
+        raise InstallError("لا توجد نسخة احتياطية محفوظة للاستعادة.")
+    # نسخ الاحتياطي إلى مجلد التجهيز باسم الهدف ثم تثبيته
+    staged = staging_dir().path / target_name()
+    try:
+        shutil.copyfile(bak, staged)
+    except OSError as ex:
+        raise InstallError(f"تعذر تجهيز النسخة الاحتياطية: {ex}") from ex
+    return await install_patch(staged)
 
 
 # ------------------------------------------------------------ فحص الجاهزية
