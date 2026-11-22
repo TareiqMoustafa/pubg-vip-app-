@@ -1,5 +1,5 @@
-"""نقطة الدخول + الواجهة (نيون جيمنج): الرئيسية · الأدوات · السجل · الإعدادات.
-Developed & Engineered by Tareiq.
+"""نقطة الدخول + الواجهة الفخمة لتطبيق Lader Tareiq: الرئيسية · الأدوات · السجل · الإعدادات.
+Developed & Engineered by Lader Tareiq.
 """
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import asyncio
 import functools
 import inspect
 import re
-import time
 import traceback
 from datetime import datetime
 from typing import Callable, Optional
@@ -19,31 +18,20 @@ import installer
 import state
 from config import CFG
 
-# ---------------------------------------------------------------- الألوان
-BG = "#06080F"
-BG2 = "#0A0E22"
-PLATE = "#0C1020"
-PLATE2 = "#121832"
-RULE = "#1C2646"
-TEXT = "#E8EEFF"
-MUT = "#7F8BB0"
+# ---------------------------------------------------------------- الألوان والسمات
+BG = "#05070E"
+BG2 = "#0B1024"
+PLATE = "#0C1124"
+PLATE2 = "#131B38"
+RULE = "#1E2A4F"
+TEXT = "#EEF3FF"
+MUT = "#8693BA"
 CYAN = "#19E3FF"
 VIOLET = "#8B5CFF"
 PINK = "#FF2E93"
 GREEN = "#38FFA2"
 AMBER = "#FFB020"
 DARK = "#031318"
-
-# حد أقصى لتحديث شريط التحميل (مرات/ثانية) لتقليل ضغط الواجهة
-_PROGRESS_FPS = 6
-_PROGRESS_MIN_INTERVAL = 1.0 / _PROGRESS_FPS
-# أقصى عناصر تُرسم في سجل النشاط
-_LOG_UI_LIMIT = 30
-
-# كاش خفيف لألوان الشفافية والظلال (تُحسب مرة واحدة)
-_OP_CACHE: dict[tuple, str] = {}
-_GLOW_CACHE: dict[tuple, list | None] = {}
-_ICON_CACHE: dict[str, object] = {}
 
 
 def _safe(factory: Callable, default=None):
@@ -54,42 +42,33 @@ def _safe(factory: Callable, default=None):
 
 
 def _icon(name: str, fallback=None):
-    cached = _ICON_CACHE.get(name)
-    if cached is not None:
-        return cached
-    val = getattr(ft.Icons, name, fallback or ft.Icons.INFO)
-    _ICON_CACHE[name] = val
-    return val
+    return getattr(ft.Icons, name, fallback or ft.Icons.INFO)
 
 
 def _op(color: str, a: float) -> str:
-    key = (color, round(a, 3))
-    hit = _OP_CACHE.get(key)
-    if hit is not None:
-        return hit
-    val = _safe(lambda: ft.Colors.with_opacity(a, color), color)
-    _OP_CACHE[key] = val
-    return val
+    return _safe(lambda: ft.Colors.with_opacity(a, color), color)
 
 
 def _glow(color: str, blur: int = 22, a: float = 0.45):
-    key = (color, blur, round(a, 3))
-    if key in _GLOW_CACHE:
-        return _GLOW_CACHE[key]
-    sh = _safe(lambda: ft.BoxShadow(
-        spread_radius=0, blur_radius=blur, color=_op(color, a), offset=ft.Offset(0, 0),
-    ))
-    result = [sh] if sh is not None else None
-    _GLOW_CACHE[key] = result
-    return result
+    sh = _safe(
+        lambda: ft.BoxShadow(
+            spread_radius=0,
+            blur_radius=blur,
+            color=_op(color, a),
+            offset=ft.Offset(0, 0),
+        )
+    )
+    return [sh] if sh is not None else None
 
 
 def _grad(c1: str, c2: str, vertical: bool = False):
-    return _safe(lambda: ft.LinearGradient(
-        begin=ft.Alignment(0, -1) if vertical else ft.Alignment(-1, 0),
-        end=ft.Alignment(0, 1) if vertical else ft.Alignment(1, 0),
-        colors=[c1, c2],
-    ))
+    return _safe(
+        lambda: ft.LinearGradient(
+            begin=ft.Alignment(0, -1) if vertical else ft.Alignment(-1, 0),
+            end=ft.Alignment(0, 1) if vertical else ft.Alignment(1, 0),
+            colors=[c1, c2],
+        )
+    )
 
 
 def _vt(v: str) -> tuple:
@@ -110,25 +89,46 @@ def guarded(fn):
         except Exception as ex:
             try:
                 self.set_busy(False)
-                self.set_status(f"حدث خطأ غير متوقع: {ex}", PINK)
-                self.log("err", f"خطأ: {ex}")
+                self.notify("err", "خطأ غير متوقع", str(ex))
             except Exception:
                 pass
+
     return wrapper
 
 
 class NButton:
-    def __init__(self, text: str, icon=None, on_click=None, kind: str = "primary", visible: bool = True, height: int = 52):
+    def __init__(
+        self,
+        text: str,
+        icon=None,
+        on_click=None,
+        kind: str = "primary",
+        visible: bool = True,
+        height: int = 52,
+    ):
         self._handler = on_click
         self.enabled = True
         self.kind = kind
-        self.label = ft.Text(text, size=15, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+        self.label = ft.Text(
+            text,
+            size=14.5,
+            weight=ft.FontWeight.BOLD,
+            text_align=ft.TextAlign.CENTER,
+        )
         self.icon = ft.Icon(icon, size=20) if icon is not None else None
-        row = ft.Row([c for c in (self.icon, self.label) if c is not None],
-                     alignment=ft.MainAxisAlignment.CENTER, spacing=8)
+        row = ft.Row(
+            [c for c in (self.icon, self.label) if c is not None],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=8,
+        )
         self.control = ft.Container(
-            content=row, height=height, border_radius=14, alignment=ft.Alignment.CENTER,
-            on_click=self._click, ink=True, visible=visible,
+            content=row,
+            height=height,
+            border_radius=14,
+            alignment=ft.Alignment.CENTER,
+            on_click=self._click,
+            ink=True,
+            visible=visible,
         )
         self.apply_kind(kind)
 
@@ -139,15 +139,15 @@ class NButton:
         if kind == "primary":
             c.gradient = _grad(CYAN, VIOLET)
             c.bgcolor = None if c.gradient is not None else CYAN
-            c.shadow = _glow(CYAN, 22, 0.40)
+            c.shadow = _glow(CYAN, 22, 0.38)
             fg = DARK
         elif kind == "danger":
-            c.bgcolor = "#1A0B17"
-            c.border = ft.Border.all(1, _op(PINK, 0.55))
+            c.bgcolor = "#1B0B18"
+            c.border = ft.Border.all(1, _op(PINK, 0.58))
             fg = PINK
         elif kind == "secondary":
             c.bgcolor = PLATE2
-            c.border = ft.Border.all(1, _op(CYAN, 0.30))
+            c.border = ft.Border.all(1, _op(CYAN, 0.32))
             fg = TEXT
         else:
             c.bgcolor = _op(BG, 0.0)
@@ -177,8 +177,13 @@ class NButton:
 
 def card(content: ft.Control, accent: str = CYAN, **kw) -> ft.Container:
     return ft.Container(
-        content=content, padding=18, border_radius=18, bgcolor=PLATE,
-        border=ft.Border.all(1, _op(accent, 0.22)), shadow=_glow(accent, 28, 0.10), **kw,
+        content=content,
+        padding=18,
+        border_radius=18,
+        bgcolor=PLATE,
+        border=ft.Border.all(1, _op(accent, 0.25)),
+        shadow=_glow(accent, 28, 0.12),
+        **kw,
     )
 
 
@@ -187,28 +192,20 @@ def title(text: str, size: int = 17, color: str = TEXT) -> ft.Text:
 
 
 def kv_row(label: str, value: ft.Control) -> ft.Row:
-    return ft.Row([ft.Text(label, size=13.5, color=MUT), value], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+    return ft.Row(
+        [ft.Text(label, size=13.5, color=MUT), value],
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+    )
 
 
 def divider() -> ft.Container:
     return ft.Container(height=1, bgcolor=RULE, margin=2)
 
 
-def _pad(*, horizontal: float = 0, vertical: float = 0, all: float | None = None):
-    """Padding متوافق مع Flet 1.x — يستخدم classmethods بدل module helpers المحذوفة."""
-    try:
-        if all is not None:
-            return ft.Padding.all(all)
-        return ft.Padding.symmetric(horizontal=horizontal, vertical=vertical)
-    except Exception:
-        # fallback رقمي بسيط لو API تغيّر
-        return all if all is not None else max(horizontal, vertical)
-
-
 def chip(text: str, color: str) -> ft.Container:
     return ft.Container(
         content=ft.Text(text, size=11.5, weight=ft.FontWeight.BOLD, color=color),
-        padding=_pad(horizontal=10, vertical=5),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=5),
         border_radius=99,
         border=ft.Border.all(1, _op(color, 0.7)),
         bgcolor=_op(color, 0.10),
@@ -222,41 +219,51 @@ class App:
         self._clip = None
         self._armed: dict = {}
         self._last_pct = -1
-        self._last_progress_ts = 0.0
-        self._pending_ui = False
-        self._last_status = ""
         self._staged = None
         self._manual_kind = "install"
         self._diag: list = []
+        self._banner_action = None
         self.tab = 0
         self.license: Optional[api.LicenseResult] = None
         st = state.load()
         self.installed_version: str = st.get("installed_version", "")
         self.deployed_name: str = st.get("deployed_name", "")
         self.auto_update: bool = bool(st.get("auto_update", False))
+        self.notifications_enabled: bool = bool(st.get("notifications_enabled", True))
         self.support_url = ""
         self.device_id = api.get_device_id()
 
-        # ===== الرأس مع توقيع Tareiq =====
+        # ===== الرأس الفخم لهوية Lader Tareiq =====
         self.status_chip = chip("غير مفعّل", MUT)
-        self.dev_badge = chip(f"by {CFG.DEVELOPER_NAME}", VIOLET)
+        self.dev_badge = chip(CFG.DEVELOPER_NAME, VIOLET)
         self.header = ft.Container(
-            padding=12,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=12),
+            bgcolor=_op(PLATE, 0.75),
+            border=ft.Border(bottom=ft.BorderSide(1, _op(CYAN, 0.16))),
             content=ft.Row(
                 [
                     ft.Row(
                         [
                             ft.Container(
                                 content=ft.Icon(_icon("VERIFIED_USER"), size=24, color=CYAN),
-                                width=44, height=44, border_radius=12, alignment=ft.Alignment.CENTER,
-                                bgcolor=_op(CYAN, 0.10), border=ft.Border.all(1, _op(CYAN, 0.45)), shadow=_glow(CYAN, 16, 0.35),
+                                width=46,
+                                height=46,
+                                border_radius=14,
+                                alignment=ft.Alignment.CENTER,
+                                bgcolor=_op(CYAN, 0.12),
+                                border=ft.Border.all(1, _op(CYAN, 0.45)),
+                                shadow=_glow(CYAN, 18, 0.35),
                             ),
                             ft.Column(
                                 [
-                                    title(CFG.APP_TITLE, 16.5),
-                                    ft.Text(f"v{CFG.APP_VERSION} • {CFG.DEVELOPER_TAGLINE}", size=11, color=MUT),
+                                    title(CFG.APP_TITLE, 17),
+                                    ft.Text(
+                                        f"v{CFG.APP_VERSION} • {CFG.DEVELOPER_TAGLINE}",
+                                        size=11,
+                                        color=MUT,
+                                    ),
                                 ],
-                                spacing=1,
+                                spacing=2,
                             ),
                         ],
                         spacing=10,
@@ -267,46 +274,144 @@ class App:
             ),
         )
 
-        # ===== الرئيسية =====
-        self.banner_text = ft.Text("", size=13.5, color=TEXT, expand=True)
+        # ===== بطاقات الحالة السريعة (Shizuku + التخزين + الباتش) =====
+        self.shizuku_status_txt = ft.Text("جاري الفحص", size=12, weight=ft.FontWeight.BOLD, color=MUT)
+        self.perm_status_txt = ft.Text("جاري الفحص", size=12, weight=ft.FontWeight.BOLD, color=MUT)
+        self.patch_state_txt = ft.Text("غير مثبّت", size=12, weight=ft.FontWeight.BOLD, color=MUT)
+        self.quick_bar = card(
+            ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ft.Text("Shizuku", size=11, color=MUT),
+                            self.shizuku_status_txt,
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    ft.Container(width=1, height=28, bgcolor=RULE),
+                    ft.Column(
+                        [
+                            ft.Text("التخزين", size=11, color=MUT),
+                            self.perm_status_txt,
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    ft.Container(width=1, height=28, bgcolor=RULE),
+                    ft.Column(
+                        [
+                            ft.Text("الباتش", size=11, color=MUT),
+                            self.patch_state_txt,
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            accent=VIOLET,
+        )
+
+        # ===== الإشعارات الاحترافية والتنبيهات =====
+        self.banner_icon = ft.Icon(_icon("CAMPAIGN"), size=20, color=CYAN)
+        self.banner_text = ft.Text("", size=13, color=TEXT, expand=True)
+        self.banner_btn = ft.TextButton("إجراء", on_click=self._on_banner_action, visible=False)
+        self.banner_close = ft.IconButton(
+            icon=_icon("CLOSE"),
+            icon_size=16,
+            icon_color=MUT,
+            on_click=lambda _: self.hide_banner(),
+        )
         self.banner = ft.Container(
-            visible=False, padding=14, border_radius=14, bgcolor=_op(CYAN, 0.08), border=ft.Border.all(1, _op(CYAN, 0.40)),
-            content=ft.Row([ft.Icon(_icon("CAMPAIGN"), size=20, color=CYAN), self.banner_text], spacing=10),
+            visible=False,
+            padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+            border_radius=14,
+            bgcolor=_op(CYAN, 0.09),
+            border=ft.Border.all(1, _op(CYAN, 0.42)),
+            content=ft.Row(
+                [self.banner_icon, self.banner_text, self.banner_btn, self.banner_close],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
         )
         self.warn_text = ft.Text("", size=13.5, color=TEXT, expand=True)
         self.warn_banner = ft.Container(
-            visible=False, padding=14, border_radius=14, bgcolor=_op(AMBER, 0.09), border=ft.Border.all(1, _op(AMBER, 0.55)),
-            content=ft.Row([ft.Icon(_icon("WARNING"), size=20, color=AMBER), self.warn_text], spacing=10),
+            visible=False,
+            padding=14,
+            border_radius=14,
+            bgcolor=_op(AMBER, 0.09),
+            border=ft.Border.all(1, _op(AMBER, 0.55)),
+            content=ft.Row(
+                [ft.Icon(_icon("WARNING"), size=20, color=AMBER), self.warn_text],
+                spacing=10,
+            ),
         )
 
         # تحديث التطبيق الإلزامي
         self.update_msg = ft.Text("", size=14, color=TEXT, text_align=ft.TextAlign.CENTER)
-        self.update_btn = NButton("تحميل النسخة الجديدة", _icon("SYSTEM_UPDATE"), visible=False)
+        self.update_btn = NButton(
+            "تحميل النسخة الجديدة",
+            _icon("SYSTEM_UPDATE"),
+            visible=False,
+        )
         self.update_panel = card(
             ft.Column(
-                [ft.Icon(_icon("SYSTEM_UPDATE"), size=44, color=CYAN), title("تحديث مطلوب", 19), self.update_msg, self.update_btn.control],
-                spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                [
+                    ft.Icon(_icon("SYSTEM_UPDATE"), size=44, color=CYAN),
+                    title("تحديث مطلوب", 19),
+                    self.update_msg,
+                    self.update_btn.control,
+                ],
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             visible=False,
         )
 
         # التفعيل
         self.key_input = ft.TextField(
-            label="كود التفعيل", password=True, can_reveal_password=True, text_align=ft.TextAlign.CENTER,
-            on_submit=self.on_activate, border_radius=14, border_color=RULE, focused_border_color=CYAN,
-            bgcolor=BG, color=TEXT,
+            label="كود التفعيل",
+            password=True,
+            can_reveal_password=True,
+            text_align=ft.TextAlign.CENTER,
+            on_submit=self.on_activate,
+            border_radius=14,
+            border_color=RULE,
+            focused_border_color=CYAN,
+            bgcolor=BG,
+            color=TEXT,
         )
         self.activate_btn = NButton("تحقق وفعّل", _icon("SECURITY"), self.on_activate)
+        self.perm_quick_btn = NButton(
+            "فحص الأذونات وShizuku",
+            _icon("ADMIN_PANEL_SETTINGS"),
+            self.on_request_permissions,
+            kind="secondary",
+            height=46,
+        )
         self.activation_card = card(
             ft.Column(
                 [
-                    title("تفعيل الاشتراك", 18),
-                    ft.Text("أدخل كود التفعيل، وسيُحمَّل الباتش أو المجلد ويُثبَّت تلقائياً.", size=13, color=MUT),
+                    ft.Row(
+                        [
+                            title("تفعيل اشتراك Lader Tareiq", 18),
+                            chip("VIP", CYAN),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Text(
+                        "أدخل كود التفعيل للتحقق الفوري وتجهيز الباتش أو المجلد تلقائياً.",
+                        size=13,
+                        color=MUT,
+                    ),
                     ft.Container(height=2),
                     self.key_input,
                     self.activate_btn.control,
+                    self.perm_quick_btn.control,
                 ],
-                spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                spacing=12,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             )
         )
 
@@ -322,16 +427,38 @@ class App:
         self.update_badge.visible = False
         self.notes_text = ft.Text("", size=13, color=TEXT)
         self.notes_box = ft.Container(
-            visible=False, padding=12, border_radius=12, bgcolor=_op(VIOLET, 0.10), border=ft.Border.all(1, _op(VIOLET, 0.40)),
-            content=ft.Column([ft.Text("ما الجديد", size=12, weight=ft.FontWeight.BOLD, color=VIOLET), self.notes_text], spacing=4),
+            visible=False,
+            padding=12,
+            border_radius=12,
+            bgcolor=_op(VIOLET, 0.10),
+            border=ft.Border.all(1, _op(VIOLET, 0.40)),
+            content=ft.Column(
+                [
+                    ft.Text("ما الجديد", size=12, weight=ft.FontWeight.BOLD, color=VIOLET),
+                    self.notes_text,
+                ],
+                spacing=4,
+            ),
         )
         self.install_btn = NButton("تثبيت الباتش", _icon("DOWNLOAD"), self.on_install)
-        self.remove_btn = NButton("حذف الباتش", _icon("DELETE"), self.on_remove_click, kind="secondary")
+        self.remove_btn = NButton(
+            "حذف الباتش",
+            _icon("DELETE"),
+            self.on_remove_click,
+            kind="secondary",
+        )
         self.account_card = card(
             ft.Column(
                 [
-                    ft.Row([title("اشتراكك", 17), chip("نشط", GREEN)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Row([self.days_text, self.days_label], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END),
+                    ft.Row(
+                        [title("اشتراكك", 17), chip("نشط", GREEN)],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Row(
+                        [self.days_text, self.days_label],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.END,
+                    ),
                     self.meter,
                     self.expiry_text,
                     divider(),
@@ -343,7 +470,8 @@ class App:
                     self.install_btn.control,
                     self.remove_btn.control,
                 ],
-                spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
             visible=False,
         )
@@ -353,151 +481,308 @@ class App:
         self.speed = ft.Text("", size=12, color=MUT, text_align=ft.TextAlign.CENTER)
         self.progress = ft.ProgressBar(visible=False, color=CYAN, bgcolor=RULE)
 
-        # النقل اليدوي
+        # النقل اليدوي / Shizuku
         self.manual_title = ft.Text("", size=15, weight=ft.FontWeight.BOLD, color=AMBER)
         self.manual_steps = ft.Text("", size=13, color=TEXT)
         self.cmd_field = ft.TextField(
-            value="", read_only=True, multiline=True, min_lines=3, max_lines=6, text_size=12,
-            border_radius=12, border_color=RULE, bgcolor=BG, color=CYAN,
+            value="",
+            read_only=True,
+            multiline=True,
+            min_lines=3,
+            max_lines=6,
+            text_size=12,
+            border_radius=12,
+            border_color=RULE,
+            bgcolor=BG,
+            color=CYAN,
         )
         self.diag_note = ft.Text("", size=11.5, color=MUT, selectable=True)
         self.copy_btn = NButton("نسخ الأمر", _icon("CONTENT_COPY"), self.on_copy, kind="secondary")
+        self.open_shizuku_btn = NButton(
+            "فتح Shizuku / الإعدادات",
+            _icon("LAUNCH"),
+            self.on_open_shizuku,
+            kind="secondary",
+            height=46,
+        )
         self.done_btn = NButton("تم التنفيذ", _icon("CHECK_CIRCLE"), self.on_manual_done)
         self.manual_panel = ft.Container(
-            visible=False, padding=16, border_radius=16, bgcolor=_op(AMBER, 0.06), border=ft.Border.all(1, _op(AMBER, 0.45)),
+            visible=False,
+            padding=16,
+            border_radius=16,
+            bgcolor=_op(AMBER, 0.06),
+            border=ft.Border.all(1, _op(AMBER, 0.45)),
             content=ft.Column(
-                [self.manual_title, self.manual_steps, self.cmd_field, self.copy_btn.control, self.done_btn.control, self.diag_note],
-                spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                [
+                    self.manual_title,
+                    self.manual_steps,
+                    self.cmd_field,
+                    self.copy_btn.control,
+                    self.open_shizuku_btn.control,
+                    self.done_btn.control,
+                    self.diag_note,
+                ],
+                spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
         )
 
-        self.support_btn = NButton("متابعة آخر التحديثات والدعم", _icon("SUPPORT_AGENT"), kind="secondary", visible=False)
+        self.support_btn = NButton(
+            "متابعة آخر التحديثات والدعم",
+            _icon("SUPPORT_AGENT"),
+            kind="secondary",
+            visible=False,
+        )
 
         self.home = ft.Column(
             [
-                self.banner, self.warn_banner, self.update_panel, self.activation_card, self.account_card,
-                ft.Column([self.progress, self.status, self.speed], spacing=6, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-                self.manual_panel, self.support_btn.control,
+                self.quick_bar,
+                self.banner,
+                self.warn_banner,
+                self.update_panel,
+                self.activation_card,
+                self.account_card,
+                ft.Column(
+                    [self.progress, self.status, self.speed],
+                    spacing=6,
+                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                ),
+                self.manual_panel,
+                self.support_btn.control,
             ],
-            spacing=14, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            spacing=14,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
         # ===== الأدوات =====
         self.diag_rows = ft.Column(spacing=8)
-        self.diag_btn = NButton("فحص الجاهزية وسرعة السيرفر", _icon("SECURITY"), self.on_diagnose)
-        self.restore_btn = NButton("استعادة النسخة الاحتياطية", _icon("RESTORE"), self.on_restore_backup, kind="secondary")
-        self.report_btn = NButton("نسخ تقرير للدعم", _icon("CONTENT_COPY"), self.on_copy_report, kind="secondary")
-        self.recheck_btn = NButton("تحديث حالة الاشتراك", _icon("REFRESH"), self.on_recheck, kind="secondary")
+        self.diag_btn = NButton(
+            "فحص الجاهزية والأذونات وShizuku",
+            _icon("SECURITY"),
+            self.on_diagnose,
+        )
+        self.perm_tool_btn = NButton(
+            "طلب / توجيه أذونات التخزين وShizuku",
+            _icon("ADMIN_PANEL_SETTINGS"),
+            self.on_request_permissions,
+            kind="secondary",
+        )
+        self.restore_btn = NButton(
+            "استعادة النسخة الاحتياطية",
+            _icon("RESTORE"),
+            self.on_restore_backup,
+            kind="secondary",
+        )
+        self.report_btn = NButton(
+            "نسخ تقرير للدعم",
+            _icon("CONTENT_COPY"),
+            self.on_copy_report,
+            kind="secondary",
+        )
+        self.recheck_btn = NButton(
+            "تحديث حالة الاشتراك",
+            _icon("REFRESH"),
+            self.on_recheck,
+            kind="secondary",
+        )
         self.tools = ft.Column(
             [
-                card(ft.Column(
-                    [
-                        title("فحص الجاهزية والاتصال", 17),
-                        ft.Text("يفحص زمن استجابة السيرفر والمساحة وصلاحيات النقل، ولا يغيّر أي شيء على جهازك.", size=13, color=MUT),
-                        self.diag_rows,
-                        self.diag_btn.control,
-                        self.report_btn.control,
-                    ],
-                    spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)),
-                card(ft.Column(
-                    [
-                        title("إدارة الاشتراك والنسخ الاحتياطي", 17),
-                        ft.Text("حدّث حالة اشتراكك أو استعد آخر نسخة احتياطية محفوظة قبل التحديث.", size=13, color=MUT),
-                        self.recheck_btn.control,
-                        self.restore_btn.control,
-                    ],
-                    spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), accent=VIOLET),
+                card(
+                    ft.Column(
+                        [
+                            title("فحص الجاهزية والأذونات وShizuku", 17),
+                            ft.Text(
+                                "يفحص سرعة السيرفر والتخزين والأذونات وحالة Shizuku دون تعديل أي ملف.",
+                                size=13,
+                                color=MUT,
+                            ),
+                            self.diag_rows,
+                            self.diag_btn.control,
+                            self.perm_tool_btn.control,
+                            self.report_btn.control,
+                        ],
+                        spacing=10,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    )
+                ),
+                card(
+                    ft.Column(
+                        [
+                            title("إدارة الاشتراك والنسخ الاحتياطي", 17),
+                            ft.Text(
+                                "حدّث حالة اشتراكك أو استعد آخر نسخة احتياطية محفوظة قبل التحديث.",
+                                size=13,
+                                color=MUT,
+                            ),
+                            self.recheck_btn.control,
+                            self.restore_btn.control,
+                        ],
+                        spacing=10,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                    accent=VIOLET,
+                ),
             ],
-            spacing=14, visible=False, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            spacing=14,
+            visible=False,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
         # ===== السجل =====
         self.log_col = ft.Column(spacing=8)
-        self.clear_log_btn = NButton("مسح السجل", _icon("DELETE"), self.on_clear_log, kind="ghost", height=46)
+        self.clear_log_btn = NButton(
+            "مسح السجل",
+            _icon("DELETE"),
+            self.on_clear_log,
+            kind="ghost",
+            height=46,
+        )
         self.logv = ft.Column(
-            [card(ft.Column([title("سجل النشاط", 17), self.log_col, self.clear_log_btn.control], spacing=12,
-                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH))],
-            spacing=14, visible=False, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            [
+                card(
+                    ft.Column(
+                        [title("سجل النشاط", 17), self.log_col, self.clear_log_btn.control],
+                        spacing=12,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    )
+                )
+            ],
+            spacing=14,
+            visible=False,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
         # ===== الإعدادات =====
-        self.sw_auto = ft.Switch(value=self.auto_update, active_color=GREEN, on_change=self.on_auto_toggle)
+        self.sw_auto = ft.Switch(
+            value=self.auto_update,
+            active_color=GREEN,
+            on_change=self.on_auto_toggle,
+        )
+        self.sw_notif = ft.Switch(
+            value=self.notifications_enabled,
+            active_color=CYAN,
+            on_change=self.on_notif_toggle,
+        )
         self.code_text = ft.Text("—", size=14, weight=ft.FontWeight.W_600, color=TEXT)
         self.logout_btn = NButton("تغيير الكود", _icon("LOGOUT"), self.on_logout, kind="secondary")
-        self.copy_dev_btn = NButton("نسخ معرّف الجهاز", _icon("CONTENT_COPY"), self.on_copy_device, kind="secondary", height=46)
-        self.wipe_btn = NButton("مسح بيانات التطبيق", _icon("DELETE"), self.on_wipe, kind="danger", height=46)
+        self.copy_dev_btn = NButton(
+            "نسخ معرّف الجهاز",
+            _icon("CONTENT_COPY"),
+            self.on_copy_device,
+            kind="secondary",
+            height=46,
+        )
+        self.wipe_btn = NButton(
+            "مسح بيانات التطبيق",
+            _icon("DELETE"),
+            self.on_wipe,
+            kind="danger",
+            height=46,
+        )
         self.settings = ft.Column(
             [
-                card(ft.Column(
-                    [
-                        title("التحديث", 17),
-                        ft.Row(
-                            [ft.Column([ft.Text("تحديث الباتش تلقائياً", size=14, weight=ft.FontWeight.W_600, color=TEXT),
-                                        ft.Text("يحمّل ويثبّت الباتش الجديد عند فتح التطبيق.", size=12, color=MUT)],
-                                       spacing=2, expand=True),
-                             self.sw_auto],
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    ],
-                    spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)),
-                card(ft.Column(
-                    [
-                        title("الحساب", 17),
-                        kv_row("الكود المحفوظ", self.code_text),
-                        kv_row("معرّف الجهاز", ft.Text(self.device_id[:8].upper(), size=14, weight=ft.FontWeight.W_600, color=TEXT)),
-                        self.copy_dev_btn.control,
-                        self.logout_btn.control,
-                    ],
-                    spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), accent=VIOLET),
-                card(ft.Column(
-                    [
-                        title("حول التطبيق والمطور", 17),
-                        kv_row("المطور", ft.Text(CFG.DEVELOPER_NAME, size=14, weight=ft.FontWeight.BOLD, color=CYAN)),
-                        kv_row("الإصدار", ft.Text(f"v{CFG.APP_VERSION}", size=14, color=TEXT)),
-                        self.wipe_btn.control,
-                    ],
-                    spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), accent=PINK),
+                card(
+                    ft.Column(
+                        [
+                            title("التحديث والإشعارات", 17),
+                            ft.Row(
+                                [
+                                    ft.Column(
+                                        [
+                                            ft.Text("تحديث الباتش تلقائياً", size=14, weight=ft.FontWeight.W_600, color=TEXT),
+                                            ft.Text("يحمّل ويثبّت الباتش الجديد عند فتح التطبيق.", size=12, color=MUT),
+                                        ],
+                                        spacing=2,
+                                        expand=True,
+                                    ),
+                                    self.sw_auto,
+                                ],
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            divider(),
+                            ft.Row(
+                                [
+                                    ft.Column(
+                                        [
+                                            ft.Text("إشعارات التحقق والعمليات", size=14, weight=ft.FontWeight.W_600, color=TEXT),
+                                            ft.Text("تنبيهات فورية لحالة الكود والأذونات والنقل.", size=12, color=MUT),
+                                        ],
+                                        spacing=2,
+                                        expand=True,
+                                    ),
+                                    self.sw_notif,
+                                ],
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                        ],
+                        spacing=10,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    )
+                ),
+                card(
+                    ft.Column(
+                        [
+                            title("الحساب", 17),
+                            kv_row("الكود المحفوظ", self.code_text),
+                            kv_row(
+                                "معرّف الجهاز",
+                                ft.Text(self.device_id[:8].upper(), size=14, weight=ft.FontWeight.W_600, color=TEXT),
+                            ),
+                            self.copy_dev_btn.control,
+                            self.logout_btn.control,
+                        ],
+                        spacing=10,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                    accent=VIOLET,
+                ),
+                card(
+                    ft.Column(
+                        [
+                            title("حول التطبيق والمطور", 17),
+                            kv_row("اسم التطبيق", ft.Text(CFG.APP_TITLE, size=14, weight=ft.FontWeight.BOLD, color=CYAN)),
+                            kv_row("المطور", ft.Text(CFG.DEVELOPER_NAME, size=14, weight=ft.FontWeight.BOLD, color=VIOLET)),
+                            kv_row("الإصدار", ft.Text(f"v{CFG.APP_VERSION}", size=14, color=TEXT)),
+                            self.wipe_btn.control,
+                        ],
+                        spacing=10,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                    accent=PINK,
+                ),
             ],
-            spacing=14, visible=False, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            spacing=14,
+            visible=False,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
         self.screens = [self.home, self.tools, self.logv, self.settings]
         self._tab_items: list = []
 
-    def ui(self, force: bool = False) -> None:
-        """تحديث واجهة واحد مجمّع — يقلل استدعاءات page.update المتكررة."""
-        try:
-            self.page.update()
-        except Exception:
-            pass
-        self._pending_ui = False
-
     def log(self, kind: str, msg: str) -> None:
         state.add_log(kind, msg)
-        # لا نعيد بناء السجل إلا إذا كان تبويب السجل ظاهراً
         if self.tab == 2:
-            self.render_log(update=True)
+            self.render_log()
 
-    def set_status(self, msg: str, color: str = MUT, *, update: bool = True) -> None:
-        if msg == self._last_status and self.status.color == color:
-            return
-        self._last_status = msg
+    def set_status(self, msg: str, color: str = MUT) -> None:
         self.status.value = msg
         self.status.color = color
-        if update:
-            self.ui()
+        self.page.update()
 
     def set_busy(self, busy: bool) -> None:
-        if self.busy == busy:
-            # حتى لو نفس الحالة، نضمن تحديث progress/speed عند الانتهاء
-            if not busy:
-                self.progress.visible = False
-                self.speed.value = ""
-                self.ui()
-            return
         self.busy = busy
         for b in (
-            self.activate_btn, self.install_btn, self.remove_btn,
-            self.logout_btn, self.recheck_btn, self.wipe_btn, self.restore_btn,
+            self.activate_btn,
+            self.install_btn,
+            self.remove_btn,
+            self.logout_btn,
+            self.recheck_btn,
+            self.wipe_btn,
+            self.restore_btn,
+            self.perm_quick_btn,
+            self.perm_tool_btn,
         ):
             b.set_enabled(not busy)
         self.key_input.disabled = busy
@@ -505,44 +790,152 @@ class App:
         if busy:
             self.progress.value = None
             self._last_pct = -1
-            self._last_progress_ts = 0.0
         else:
             self.speed.value = ""
-            self.progress.value = 0
-        self.ui()
+        self.page.update()
 
     def on_progress(self, value: Optional[float]) -> None:
-        """تحديث شريط التحميل مع خنق زمني (~6 FPS) لتجنب تجميد الواجهة."""
-        now = time.monotonic()
         info = installer.progress_info
         if value is not None:
             pct = int(value * 100)
-            # تخطّي نفس النسبة أو التحديثات الأسرع من الحد
             if pct == self._last_pct:
                 return
-            if pct < 100 and (now - self._last_progress_ts) < _PROGRESS_MIN_INTERVAL:
-                # نخزّن القيمة فقط ونحدّث لاحقاً عند الفاصل التالي
-                self.progress.value = value
-                return
             self._last_pct = pct
-            self._last_progress_ts = now
             self.status.value = f"جاري تحميل الحزمة… {pct}%"
             self.status.color = CYAN
-            self._last_status = self.status.value
-            total = info.get("total") or 0
-            done = info.get("done") or 0
-            speed = info.get("speed") or 0.0
-            if total:
-                self.speed.value = f"{_mb(done)} / {_mb(total)} MB  •  {_mb(speed)} MB/s"
-            else:
-                self.speed.value = f"{_mb(done)} MB  •  {_mb(speed)} MB/s"
+            self.speed.value = f"{_mb(info['done'])} / {_mb(info['total'])} MB  •  {_mb(info['speed'])} MB/s"
         self.progress.value = value
-        self.ui()
+        self.page.update()
 
-    def show_banner(self, text: str) -> None:
+    def show_banner(
+        self,
+        text: str,
+        accent: str = CYAN,
+        icon_name: str = "CAMPAIGN",
+        action_label: str = "",
+        on_action: Optional[Callable] = None,
+    ) -> None:
         self.banner_text.value = text
+        self.banner_icon.name = _icon(icon_name)
+        self.banner_icon.color = accent
+        self.banner.bgcolor = _op(accent, 0.09)
+        self.banner.border = ft.Border.all(1, _op(accent, 0.45))
+        self._banner_action = on_action
+        self.banner_btn.text = action_label or "إجراء"
+        self.banner_btn.visible = bool(action_label and on_action is not None)
         self.banner.visible = bool(text)
-        self.ui()
+        self.page.update()
+
+    def hide_banner(self) -> None:
+        self._banner_action = None
+        self.banner.visible = False
+        self.page.update()
+
+    async def _on_banner_action(self, e) -> None:
+        if callable(self._banner_action):
+            res = self._banner_action(e)
+            if inspect.isawaitable(res):
+                await res
+
+    def notify(
+        self,
+        kind: str,
+        title_text: str,
+        message: str,
+        action_label: str = "",
+        action_fn: Optional[Callable] = None,
+        record_log: bool = True,
+    ) -> None:
+        palette = {
+            "ok": (GREEN, "CHECK_CIRCLE"),
+            "warn": (AMBER, "WARNING"),
+            "err": (PINK, "ERROR"),
+            "info": (CYAN, "NOTIFICATIONS_ACTIVE"),
+        }
+        accent, icon_name = palette.get(kind, (CYAN, "NOTIFICATIONS_ACTIVE"))
+        if record_log:
+            self.log(kind, f"{title_text}: {message}")
+        self.status.value = f"{title_text} — {message}" if message else title_text
+        self.status.color = accent
+        if self.notifications_enabled:
+            self.show_banner(
+                f"{title_text}: {message}" if message else title_text,
+                accent=accent,
+                icon_name=icon_name,
+                action_label=action_label,
+                on_action=action_fn,
+            )
+        else:
+            self.page.update()
+
+    async def refresh_quick_environment(self) -> None:
+        st = await asyncio.to_thread(installer.staging_dir)
+        rish_ok = await asyncio.to_thread(installer.has_rish)
+        present = await asyncio.to_thread(installer.is_deployed_present, self.deployed_name)
+        self.shizuku_status_txt.value = "متصل (rish)" if rish_ok else "يدوي / غير متصل"
+        self.shizuku_status_txt.color = GREEN if rish_ok else AMBER
+        self.perm_status_txt.value = "جاهز للتجهيز" if st.shell_readable else "يحتاج إذن"
+        self.perm_status_txt.color = GREEN if st.shell_readable else PINK
+        if present or self.installed_version:
+            self.patch_state_txt.value = f"مثبّت ({self.installed_version or 'VIP'})"
+            self.patch_state_txt.color = GREEN
+        else:
+            self.patch_state_txt.value = "غير مثبّت"
+            self.patch_state_txt.color = MUT
+        self.page.update()
+
+    async def request_permissions_and_shizuku(self) -> None:
+        st = await asyncio.to_thread(installer.staging_dir)
+        rish_ok = await asyncio.to_thread(installer.has_rish)
+        await self.refresh_quick_environment()
+        if st.shell_readable and rish_ok:
+            self.notify("ok", "الأذونات وShizuku جاهزان", "مسار التجهيز متاح وخدمة Shizuku متصلة.")
+        elif st.shell_readable:
+            self.notify(
+                "info",
+                "مسار التجهيز جاهز",
+                "يمكن تجهيز الملفات بنجاح؛ فعّل Shizuku للنقل التلقائي لمجلد اللعبة.",
+                action_label="فتح Shizuku",
+                action_fn=lambda _: asyncio.create_task(self.open_shizuku_or_settings()),
+            )
+        else:
+            self.notify(
+                "warn",
+                "إذن التخزين مطلوب",
+                "فعّل «إدارة كل الملفات» للتطبيق من إعدادات الهاتف ثم أعد الفحص.",
+                action_label="فتح الإعدادات",
+                action_fn=lambda _: asyncio.create_task(self.open_shizuku_or_settings()),
+            )
+
+    async def open_shizuku_or_settings(self) -> None:
+        for uri in (
+            "intent:#Intent;package=moe.shizuku.privileged.api;end",
+            "android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION",
+            "android.settings.SETTINGS",
+        ):
+            try:
+                fn = getattr(self.page, "launch_url", None)
+                if callable(fn):
+                    out = fn(uri)
+                    if inspect.isawaitable(out):
+                        await out
+                    self.notify("info", "تم فتح التوجيه", "أكمل التفعيل في شاشة النظام ثم ارجع إلى Lader Tareiq.")
+                    return
+            except Exception:
+                continue
+        self.notify(
+            "info",
+            "تفعيل الأذونات وShizuku",
+            "افتح إعدادات الهاتف > التطبيقات > صلاحيات الملفات، وشغّل Shizuku ثم اضغط فحص الجاهزية.",
+        )
+
+    @guarded
+    async def on_request_permissions(self, e) -> None:
+        await self.request_permissions_and_shizuku()
+
+    @guarded
+    async def on_open_shizuku(self, e) -> None:
+        await self.open_shizuku_or_settings()
 
     def apply_support(self, url: str) -> None:
         if url:
@@ -557,29 +950,28 @@ class App:
         self.status_chip.bgcolor = _op(color, 0.10)
 
     def go(self, index: int) -> None:
-        if index == self.tab and index != 2:
-            return
-        prev = self.tab
         self.tab = index
-        # إخفاء/إظهار الشاشات فقط عند الحاجة
-        if 0 <= prev < len(self.screens):
-            self.screens[prev].visible = False
-        if 0 <= index < len(self.screens):
-            self.screens[index].visible = True
+        for i, s in enumerate(self.screens):
+            s.visible = i == index
         for i, (box, ic, lab) in enumerate(self._tab_items):
             on = i == index
             col = CYAN if on else MUT
             ic.color = col
             lab.color = col
-            box.bgcolor = _op(CYAN, 0.10) if on else None
+            box.bgcolor = _op(CYAN, 0.10) if on else _op(BG, 0.0)
             box.shadow = _glow(CYAN, 14, 0.25) if on else None
         if index == 2:
-            self.render_log(update=False)
-        self.ui()
+            self.render_log()
+        self.page.update()
 
     def needs_update(self) -> bool:
         lic = self.license
-        return bool(lic and lic.patch_version and self.installed_version and lic.patch_version != self.installed_version)
+        return bool(
+            lic
+            and lic.patch_version
+            and self.installed_version
+            and lic.patch_version != self.installed_version
+        )
 
     def show_update_required(self, message: str, url: str) -> None:
         self.activation_card.visible = False
@@ -589,7 +981,7 @@ class App:
         self.update_btn.set_url(url)
         self.update_panel.visible = True
         self.set_chip("تحديث مطلوب", AMBER)
-        self.ui()
+        self.page.update()
 
     def show_account(self) -> None:
         self.activation_card.visible = False
@@ -602,7 +994,7 @@ class App:
         self.warn_banner.visible = False
         self.activation_card.visible = True
         self.set_chip("غير مفعّل", MUT)
-        self.ui()
+        self.page.update()
 
     def refresh_account(self) -> None:
         lic = self.license
@@ -624,7 +1016,8 @@ class App:
         if soon:
             self.warn_text.value = (
                 f"اشتراكك ينتهي خلال {lic.remaining_days} يوم. تواصل مع الدعم للتجديد."
-                if lic.remaining_days >= 1 else "اشتراكك ينتهي اليوم. تواصل مع الدعم للتجديد."
+                if lic.remaining_days >= 1
+                else "اشتراكك ينتهي اليوم. تواصل مع الدعم للتجديد."
             )
         self.installed_text.value = f"رقم {self.installed_version}" if self.installed_version else "غير مثبّت"
         self.latest_text.value = f"رقم {lic.patch_version}" if lic.patch_version else "—"
@@ -634,11 +1027,17 @@ class App:
         self.notes_text.value = lic.patch_notes
         self.notes_box.visible = bool(lic.patch_notes)
         self.install_btn.set_text(
-            "تحديث الباتش" if outdated else ("إعادة تثبيت الباتش" if self.installed_version else "تثبيت الباتش")
+            "تحديث الباتش"
+            if outdated
+            else ("إعادة تثبيت الباتش" if self.installed_version else "تثبيت الباتش")
         )
         key = state.load().get("key") or ""
         self.code_text.value = ("••••" + key[-4:]) if len(key) >= 4 else "—"
-        self.ui()
+        self.patch_state_txt.value = (
+            f"مثبّت ({self.installed_version or 'VIP'})" if self.installed_version else "غير مثبّت"
+        )
+        self.patch_state_txt.color = GREEN if self.installed_version else MUT
+        self.page.update()
 
     def mark_installed(self, version: str, deployed_name: str = "") -> None:
         self.installed_version = version or ""
@@ -650,15 +1049,16 @@ class App:
         self._manual_kind = kind
         self.cmd_field.value = command
         if kind == "remove":
-            self.manual_title.value = "حذف الباتش/المجلد يدوياً"
+            self.manual_title.value = "حذف الباتش/المجلد عبر Shizuku أو يدوياً"
             self.manual_steps.value = (
-                "١) افتح طرفية تعمل بـ Shizuku (مثل aShell You)\n"
-                "٢) الصق الأمر التالي ونفّذه\n٣) ارجع هنا واضغط «تم التنفيذ»"
+                "١) افتح طرفية Shizuku (مثل aShell You)\n"
+                "٢) الصق الأمر التالي ونفّذه\n"
+                "٣) ارجع هنا واضغط «تم التنفيذ»"
             )
         else:
-            self.manual_title.value = "الحزمة جاهزة، أكمل النقل"
+            self.manual_title.value = "الحزمة جاهزة — أكمل النقل عبر Shizuku"
             self.manual_steps.value = (
-                "١) افتح طرفية تعمل بـ Shizuku (مثل aShell You)\n"
+                "١) افتح طرفية Shizuku (مثل aShell You)\n"
                 "٢) الصق الأمر التالي ونفّذه\n"
                 "٣) تأكد من ظهور الملفات في الوجهة، ثم اضغط «تم التنفيذ»"
             )
@@ -676,13 +1076,11 @@ class App:
             )
             self.diag_note.color = PINK
         self.manual_panel.visible = True
-        self.ui()
+        self.page.update()
 
     def hide_manual(self) -> None:
-        if not self.manual_panel.visible:
-            return
         self.manual_panel.visible = False
-        self.ui()
+        self.page.update()
 
     async def _copy(self, text: str) -> bool:
         try:
@@ -701,55 +1099,56 @@ class App:
     @guarded
     async def on_copy(self, e) -> None:
         ok = await self._copy(self.cmd_field.value or "")
-        self.set_status(
-            "تم نسخ الأمر ✅" if ok else "تعذر النسخ التلقائي: اضغط مطولاً على الأمر وانسخه يدوياً.",
-            GREEN if ok else AMBER,
+        self.notify(
+            "ok" if ok else "warn",
+            "نسخ الأمر",
+            "تم نسخ أمر Shizuku بنجاح." if ok else "تعذر النسخ التلقائي؛ انسخ الأمر مطولاً.",
+            record_log=False,
         )
 
     @guarded
     async def on_manual_done(self, e) -> None:
         if self._manual_kind == "remove":
             self.mark_installed("", "")
-            self.log("ok", "تم حذف الباتش/المجلد (يدوياً)")
-            self.set_status("تم الحذف ✅", GREEN)
+            self.notify("ok", "تم حذف الباتش", "تم تأكيد إزالة الباتش/المجلد عبر Shizuku.")
         else:
             dname = self._staged.name if self._staged else ""
             self.mark_installed(self.license.patch_version if self.license else "", dname)
             installer.cleanup(self._staged)
             self._staged = None
-            self.log("ok", f"تم تثبيت {dname or self.installed_version} (يدوياً)")
-            self.set_status("تم التثبيت ✅ افتح اللعبة الآن.", GREEN)
+            self.notify("ok", "تم التثبيت", f"تم تثبيت {dname or self.installed_version}؛ يمكنك تشغيل اللعبة الآن.")
         self.hide_manual()
 
     @guarded
     async def start(self) -> None:
         self.render_log()
+        await self.refresh_quick_environment()
         cfg = await api.fetch_app_config()
         self.apply_support(cfg.get("support_url") or "")
-        self.show_banner(cfg.get("notice") or "")
+        if cfg.get("notice"):
+            self.show_banner(cfg.get("notice") or "", accent=CYAN, icon_name="CAMPAIGN")
 
         min_ver = cfg.get("min_app_version") or ""
         if min_ver and _vt(CFG.APP_VERSION) < _vt(min_ver):
             self.show_update_required("يجب تحديث التطبيق للمتابعة.", cfg.get("update_url") or "")
+            self.notify("warn", "تحديث التطبيق مطلوب", "يتوفر إصدار أحدث من Lader Tareiq.")
             return
 
         saved = state.load().get("key") or ""
         if not saved:
-            self.ui()
+            self.page.update()
             return
         self.key_input.value = saved
         self.set_busy(True)
         try:
-            self.set_status("جاري التحقق من اشتراكك…", CYAN)
+            self.set_status("جاري التحقق التلقائي من اشتراكك…", CYAN)
             ok = await self.verify(saved, auto=True)
             lic = self.license
             if ok and lic and self.needs_update():
-                self.log("info", f"يوجد تحديث جديد رقم {lic.patch_version}")
+                self.notify("info", "تحديث باتش جديد", f"يتوفر إصدار جديد رقم {lic.patch_version}.")
                 if lic.force_update or self.auto_update:
                     self.set_status("جاري التحديث تلقائياً…", CYAN)
                     await self.do_install()
-                else:
-                    self.set_status("يوجد تحديث جديد، اضغط «تحديث الباتش».", AMBER)
         finally:
             self.set_busy(False)
 
@@ -760,23 +1159,29 @@ class App:
             self.license = result
             state.save(key=key)
             if result.notice:
-                self.show_banner(result.notice)
+                self.show_banner(result.notice, accent=VIOLET, icon_name="CAMPAIGN")
             self.apply_support(result.support_url)
             self.show_account()
-            self.set_status("", MUT)
+            days_txt = f"متبقي {result.remaining_days} يوم" if result.remaining_days >= 1 else "ينتهي اليوم"
+            self.notify("ok", "تم التحقق من الكود", f"اشتراكك نشط ({days_txt}).")
             return True
         if result.status is S.UPDATE_REQUIRED:
             self.show_update_required(result.message, result.update_url)
+            self.notify("warn", "تحديث التطبيق مطلوب", result.message or "يلزم تحديث التطبيق للمتابعة.")
             return False
         if result.status is S.MAINTENANCE:
-            self.show_banner(result.message)
+            self.show_banner(result.message, accent=AMBER, icon_name="CONSTRUCTION")
+            self.notify("warn", "وضع الصيانة", result.message or "السيرفر تحت الصيانة حالياً.")
         if result.status is S.INVALID:
             state.save(key=None)
         self.show_activation()
-        color = AMBER if result.status in (S.NETWORK_ERROR, S.MAINTENANCE, S.SERVER_ERROR) else PINK
-        self.set_status(("" if auto and result.status is S.NETWORK_ERROR else "❌ ") + result.message, color)
-        if result.status in (S.BANNED, S.EXPIRED, S.DEVICE_LIMIT, S.INVALID):
-            self.log("err", result.message)
+        if result.status in (S.NETWORK_ERROR, S.SERVER_ERROR):
+            if not auto:
+                self.notify("warn", "تعذر التحقق", result.message or "تحقق من اتصال الإنترنت.")
+            else:
+                self.set_status(result.message or "تعذر التحقق التلقائي من الشبكة.", AMBER)
+        else:
+            self.notify("err", "تنبيه الكود", result.message or "الكود غير صالح أو منتهي.")
         return False
 
     @guarded
@@ -785,13 +1190,12 @@ class App:
             return
         key = (self.key_input.value or "").strip()
         if not key:
-            self.set_status("الرجاء كتابة الكود أولاً!", PINK)
+            self.notify("warn", "إدخال مطلوب", "الرجاء كتابة كود التفعيل أولاً.")
             return
         self.set_busy(True)
         try:
-            self.set_status("جاري التحقق من الكود…", CYAN)
+            self.set_status("جاري التحقق من كود التفعيل…", CYAN)
             if await self.verify(key):
-                self.log("ok", f"تم تفعيل الاشتراك ({self.license.remaining_days} يوم)")
                 if not self.installed_version:
                     self.set_status("الكود صالح! جاري تحميل وتجهيز الحزمة…", CYAN)
                     await self.do_install()
@@ -818,16 +1222,14 @@ class App:
         key = state.load().get("key") or ""
         if not key:
             self.go(0)
-            self.set_status("أدخل كود التفعيل أولاً.", AMBER)
+            self.notify("warn", "لا يوجد كود محفوظ", "أدخل كود التفعيل أولاً.")
             return
         self.set_busy(True)
         try:
             self.go(0)
-            self.set_status("جاري التحقق من اشتراكك…", CYAN)
+            self.set_status("جاري تحديث حالة الاشتراك…", CYAN)
             if await self.verify(key) and self.needs_update():
-                self.set_status("يوجد تحديث جديد، اضغط «تحديث الباتش».", AMBER)
-            elif self.license:
-                self.set_status("اشتراكك محدّث ✅", GREEN)
+                self.notify("info", "تحديث متاح", "يوجد إصدار باتش جديد؛ اضغط «تحديث الباتش».")
         finally:
             self.set_busy(False)
 
@@ -836,7 +1238,7 @@ class App:
         if lic is None:
             return
         if not (lic.download_url or CFG.PATCH_DOWNLOAD_URL or CFG.PATCH_MIRRORS):
-            self.set_status("لم يضف المشرف رابط الباتش بعد. تواصل مع الدعم.", AMBER)
+            self.notify("warn", "الرابط غير متوفر", "لم يضف المشرف رابط الباتش بعد؛ تواصل مع الدعم.")
             return
         self.hide_manual()
         installer.configure_target(lic.target_file_name, lic.game_package)
@@ -845,26 +1247,33 @@ class App:
         try:
             self.set_status("جاري تحميل الحزمة…", CYAN)
             staged = await installer.download_patch(
-                self.on_progress, lic.download_url, lic.patch_sha256, lic.deploy_mode
+                self.on_progress,
+                lic.download_url,
+                lic.patch_sha256,
+                lic.deploy_mode,
             )
             self.progress.value = None
             self.set_status("تم التجهيز! جاري النقل إلى مجلد اللعبة…", CYAN)
             res = await installer.install_patch(staged)
             self.mark_installed(lic.patch_version, res.deployed_name)
+            await self.refresh_quick_environment()
             how = "عبر Shizuku" if res.method == "shizuku" else "مباشرة"
             what = f"المجلد '{res.deployed_name}'" if res.kind == "folder" else f"الباتش {lic.patch_version}"
-            self.log("ok", f"تم تثبيت {what} {how}")
-            self.set_status(f"تم نقل {what} {how} ✅ افتح اللعبة الآن.", GREEN)
+            self.notify("ok", "تم التثبيت بنجاح", f"تم نقل {what} {how}؛ يمكنك فتح اللعبة الآن.")
         except installer.InstallError as ex:
             if ex.manual_command:
                 keep_file = True
                 self._staged = staged
-                self.log("warn", "تم التجهيز وتحتاج لتنفيذ أمر النقل يدوياً")
-                self.set_status(f"⚠️ {ex}", AMBER)
+                self.notify(
+                    "warn",
+                    "نقل عبر Shizuku مطلوب",
+                    "تم تجهيز الملف؛ انسخ أمر Shizuku ونفّذه لإكمال النقل.",
+                    action_label="فتح Shizuku",
+                    action_fn=lambda _: asyncio.create_task(self.open_shizuku_or_settings()),
+                )
                 self.show_manual(ex.manual_command, "install")
             else:
-                self.log("err", str(ex))
-                self.set_status(f"❌ {ex}", PINK)
+                self.notify("err", "فشل التثبيت", str(ex))
         finally:
             if not keep_file:
                 installer.cleanup(staged)
@@ -884,10 +1293,10 @@ class App:
                 self._armed.pop(name, None)
                 btn.set_text(normal)
                 btn.apply_kind(base_kind)
-                self.ui()
+                self.page.update()
 
             self._armed[name] = asyncio.create_task(disarm_later())
-            self.ui()
+            self.page.update()
             return False
         task.cancel()
         self._armed.pop(name, None)
@@ -899,7 +1308,12 @@ class App:
     async def on_remove_click(self, e) -> None:
         if self.busy:
             return
-        if not await self._confirm_twice("remove", self.remove_btn, "حذف الباتش", "اضغط مرة أخرى لتأكيد الحذف"):
+        if not await self._confirm_twice(
+            "remove",
+            self.remove_btn,
+            "حذف الباتش",
+            "اضغط مرة أخرى لتأكيد الحذف",
+        ):
             return
         self.set_busy(True)
         try:
@@ -909,18 +1323,27 @@ class App:
 
     async def do_remove(self) -> None:
         lic = self.license
-        installer.configure_target(lic.target_file_name if lic else "", lic.game_package if lic else "")
+        installer.configure_target(
+            lic.target_file_name if lic else "",
+            lic.game_package if lic else "",
+        )
         self.hide_manual()
         target_item = self.deployed_name
         try:
             self.set_status("جاري الحذف من مجلد اللعبة…", CYAN)
             res = await installer.remove_patch(target_item)
             self.mark_installed("", "")
+            await self.refresh_quick_environment()
             how = "عبر Shizuku" if res.method == "shizuku" else "مباشرة"
-            self.log("ok", f"تم الحذف {how}")
-            self.set_status(f"تم الحذف {how} ✅", GREEN)
+            self.notify("ok", "تم الحذف", f"تمت إزالة الباتش {how}.")
         except installer.InstallError as ex:
-            self.set_status(f"⚠️ {ex}", AMBER)
+            self.notify(
+                "warn",
+                "الحذف عبر Shizuku مطلوب",
+                str(ex),
+                action_label="فتح Shizuku",
+                action_fn=lambda _: asyncio.create_task(self.open_shizuku_or_settings()),
+            )
             self.show_manual(ex.manual_command, "remove")
 
     @guarded
@@ -932,11 +1355,11 @@ class App:
             self.go(0)
             self.set_status("جاري استعادة النسخة الاحتياطية…", CYAN)
             res = await installer.restore_backup(self.deployed_name)
+            await self.refresh_quick_environment()
             how = "عبر Shizuku" if res.method == "shizuku" else "مباشرة"
-            self.log("ok", f"تمت استعادة النسخة الاحتياطية {how}")
-            self.set_status(f"تمت استعادة النسخة الاحتياطية {how} ✅", GREEN)
+            self.notify("ok", "تمت الاستعادة", f"تمت استعادة النسخة الاحتياطية {how}.")
         except installer.InstallError as ex:
-            self.set_status(f"❌ {ex}", PINK)
+            self.notify("err", "تعذر الاستعادة", str(ex))
         finally:
             self.set_busy(False)
 
@@ -946,18 +1369,35 @@ class App:
             return
         self.diag_btn.set_enabled(False)
         self.diag_rows.controls = [ft.Text("جاري الفحص…", size=13, color=CYAN)]
-        self.ui()
+        self.page.update()
         try:
             online, ping_ms = await api.ping_server()
             lic = self.license
-            installer.configure_target(lic.target_file_name if lic else "", lic.game_package if lic else "")
+            installer.configure_target(
+                lic.target_file_name if lic else "",
+                lic.game_package if lic else "",
+            )
             rows = [
-                ("الاتصال بالسيرفر", "ok" if online else "warn", f"متصل ({ping_ms} ms)" if online else "تعذر الوصول للسيرفر"),
-                ("الاشتراك", "ok" if lic else "info", f"نشط، متبقي {lic.remaining_days} يوم" if lic else "غير مفعّل"),
+                (
+                    "الاتصال بالسيرفر",
+                    "ok" if online else "warn",
+                    f"متصل ({ping_ms} ms)" if online else "تعذر الوصول للسيرفر",
+                ),
+                (
+                    "الاشتراك",
+                    "ok" if lic else "info",
+                    f"نشط، متبقي {lic.remaining_days} يوم" if lic else "غير مفعّل",
+                ),
             ]
             if lic:
                 has_url = bool(lic.download_url or CFG.PATCH_DOWNLOAD_URL)
-                rows.append(("رابط الحزمة", "ok" if has_url else "warn", "مضبوط" if has_url else "لم يضفه المشرف بعد"))
+                rows.append(
+                    (
+                        "رابط الحزمة",
+                        "ok" if has_url else "warn",
+                        "مضبوط" if has_url else "لم يضفه المشرف بعد",
+                    )
+                )
             rows += await asyncio.to_thread(installer.diagnostics)
             self._diag = rows
             colors = {"ok": GREEN, "warn": AMBER, "info": MUT}
@@ -967,19 +1407,24 @@ class App:
                     [
                         ft.Icon(icons[s], size=20, color=colors[s]),
                         ft.Column(
-                            [ft.Text(label, size=13.5, weight=ft.FontWeight.W_600, color=TEXT),
-                             ft.Text(detail, size=12, color=MUT)],
-                            spacing=0, expand=True,
+                            [
+                                ft.Text(label, size=13.5, weight=ft.FontWeight.W_600, color=TEXT),
+                                ft.Text(detail, size=12, color=MUT),
+                            ],
+                            spacing=0,
+                            expand=True,
                         ),
                     ],
-                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.START,
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
                 )
                 for label, s, detail in rows
             ]
-            self.log("info", f"تم فحص الجاهزية (Ping: {ping_ms} ms)")
+            await self.refresh_quick_environment()
+            self.notify("info", "اكتمل الفحص", f"زمن الاستجابة: {ping_ms} ms.")
         finally:
             self.diag_btn.set_enabled(True)
-            self.ui()
+            self.page.update()
 
     @guarded
     async def on_copy_report(self, e) -> None:
@@ -996,40 +1441,55 @@ class App:
             lines.append(f"{ent.get('t', '')[:16]} {ent.get('m', '')}")
         ok = await self._copy("\n".join(lines))
         self.go(0)
-        self.set_status("تم نسخ التقرير، أرسله للدعم ✅" if ok else "تعذر النسخ التلقائي.", GREEN if ok else AMBER)
+        self.notify(
+            "ok" if ok else "warn",
+            "تقرير التشخيص",
+            "تم نسخ التقرير؛ أرسله للدعم." if ok else "تعذر النسخ التلقائي.",
+            record_log=False,
+        )
 
-    def render_log(self, *, update: bool = True) -> None:
-        entries = state.get_log()
-        # أحدث العناصر أولاً، بحد أقصى لتقليل تكلفة الرسم
-        entries = list(reversed(entries[-_LOG_UI_LIMIT:])) if entries else []
+    def render_log(self) -> None:
+        entries = list(reversed(state.get_log()))
         colors = {"ok": GREEN, "err": PINK, "warn": AMBER, "info": CYAN}
         if not entries:
             self.log_col.controls = [ft.Text("لا توجد أحداث بعد.", size=13, color=MUT)]
         else:
             rows = []
-            for ent in entries:
-                raw_t = ent.get("t", "")
+            for ent in entries[:40]:
                 try:
-                    stamp = datetime.strptime(raw_t, "%Y-%m-%dT%H:%M:%SZ").strftime("%m-%d %H:%M")
-                except (TypeError, ValueError):
-                    stamp = raw_t[:16] if raw_t else ""
+                    stamp = datetime.strptime(ent["t"], "%Y-%m-%dT%H:%M:%SZ").strftime("%m-%d %H:%M")
+                except (KeyError, ValueError):
+                    stamp = ""
                 col = colors.get(ent.get("k"), MUT)
-                rows.append(ft.Row(
-                    [
-                        ft.Container(width=8, height=8, border_radius=99, bgcolor=col, margin=6),
-                        ft.Column(
-                            [
-                                ft.Text(ent.get("m", ""), size=13.5, color=TEXT),
-                                ft.Text(stamp + " UTC" if stamp else "", size=11, color=MUT),
-                            ],
-                            spacing=0, expand=True,
-                        ),
-                    ],
-                    spacing=8, vertical_alignment=ft.CrossAxisAlignment.START,
-                ))
+                rows.append(
+                    ft.Row(
+                        [
+                            ft.Container(
+                                width=8,
+                                height=8,
+                                border_radius=99,
+                                bgcolor=col,
+                                shadow=_glow(col, 8, 0.8),
+                                margin=6,
+                            ),
+                            ft.Column(
+                                [
+                                    ft.Text(ent.get("m", ""), size=13.5, color=TEXT),
+                                    ft.Text(stamp + " UTC", size=11, color=MUT),
+                                ],
+                                spacing=0,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    )
+                )
             self.log_col.controls = rows
-        if update:
-            self.ui()
+        try:
+            self.page.update()
+        except Exception:
+            pass
 
     @guarded
     async def on_clear_log(self, e) -> None:
@@ -1042,10 +1502,20 @@ class App:
         state.save(auto_update=self.auto_update)
 
     @guarded
+    async def on_notif_toggle(self, e) -> None:
+        self.notifications_enabled = bool(self.sw_notif.value)
+        state.save(notifications_enabled=self.notifications_enabled)
+
+    @guarded
     async def on_copy_device(self, e) -> None:
         ok = await self._copy(self.device_id)
         self.go(0)
-        self.set_status("تم نسخ معرّف الجهاز ✅" if ok else "تعذر النسخ التلقائي.", GREEN if ok else AMBER)
+        self.notify(
+            "ok" if ok else "warn",
+            "معرّف الجهاز",
+            "تم نسخ معرّف الجهاز بنجاح." if ok else "تعذر النسخ التلقائي.",
+            record_log=False,
+        )
 
     @guarded
     async def on_logout(self, e) -> None:
@@ -1056,55 +1526,88 @@ class App:
         self.key_input.value = ""
         self.code_text.value = "—"
         self.hide_manual()
-        self.log("info", "تم تسجيل الخروج من الكود")
         self.show_activation()
         self.go(0)
-        self.set_status("", MUT)
+        self.notify("info", "تم تسجيل الخروج", "تمت إزالة كود التفعيل من هذا الجهاز.")
 
     @guarded
     async def on_wipe(self, e) -> None:
         if self.busy:
             return
-        if not await self._confirm_twice("wipe", self.wipe_btn, "مسح بيانات التطبيق", "اضغط مرة أخرى لتأكيد المسح"):
+        if not await self._confirm_twice(
+            "wipe",
+            self.wipe_btn,
+            "مسح بيانات التطبيق",
+            "اضغط مرة أخرى لتأكيد المسح",
+        ):
             return
-        state.save(key=None, installed_version=None, deployed_name=None, log=None, auto_update=None)
+        state.save(
+            key=None,
+            installed_version=None,
+            deployed_name=None,
+            log=None,
+            auto_update=None,
+            notifications_enabled=None,
+        )
         self.license = None
         self.installed_version = ""
         self.deployed_name = ""
         self.auto_update = False
+        self.notifications_enabled = True
         self.sw_auto.value = False
+        self.sw_notif.value = True
         self.key_input.value = ""
         self.code_text.value = "—"
         self.hide_manual()
+        await self.refresh_quick_environment()
         self.show_activation()
         self.go(0)
-        self.set_status("تم مسح بيانات التطبيق.", GREEN)
+        self.notify("ok", "تم مسح البيانات", "تمت إعادة ضبط بيانات تطبيق Lader Tareiq.", record_log=False)
 
     def build(self) -> ft.Control:
-        specs = [("الرئيسية", "HOME"), ("الأدوات", "HANDYMAN"), ("السجل", "HISTORY"), ("الإعدادات", "SETTINGS")]
+        specs = [
+            ("الرئيسية", "HOME"),
+            ("الأدوات", "HANDYMAN"),
+            ("السجل", "HISTORY"),
+            ("الإعدادات", "SETTINGS"),
+        ]
         items = []
         for i, (label, ic_name) in enumerate(specs):
             ic = ft.Icon(_icon(ic_name), size=22, color=MUT)
             lab = ft.Text(label, size=11.5, color=MUT, weight=ft.FontWeight.W_600)
             box = ft.Container(
                 content=ft.Column([ic, lab], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=8, border_radius=14, expand=True, alignment=ft.Alignment.CENTER, ink=True,
+                padding=8,
+                border_radius=14,
+                expand=True,
+                alignment=ft.Alignment.CENTER,
+                ink=True,
                 on_click=lambda e, idx=i: self.go(idx),
             )
             items.append((box, ic, lab))
         self._tab_items = items
         tabbar = ft.Container(
             content=ft.Row([b for b, _, _ in items], spacing=4),
-            padding=8, bgcolor=_op(PLATE, 0.96), border=ft.Border.all(1, _op(CYAN, 0.18)),
+            padding=8,
+            bgcolor=_op(PLATE, 0.96),
+            border=ft.Border.all(1, _op(CYAN, 0.20)),
         )
         body = ft.Container(
-            content=ft.Column(self.screens, scroll=ft.ScrollMode.AUTO, expand=True, spacing=0,
-                              horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-            padding=16, expand=True,
+            content=ft.Column(
+                self.screens,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
+                spacing=0,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            ),
+            padding=16,
+            expand=True,
         )
         root = ft.Container(
             content=ft.Column([self.header, body, tabbar], spacing=0, expand=True),
-            expand=True, gradient=_grad(BG, BG2, vertical=True), bgcolor=None if _grad(BG, BG2) is not None else BG,
+            expand=True,
+            gradient=_grad(BG, BG2, vertical=True),
+            bgcolor=None if _grad(BG, BG2) is not None else BG,
         )
         for i, (box, ic, lab) in enumerate(items):
             on = i == 0
@@ -1122,28 +1625,36 @@ async def main(page: ft.Page) -> None:
     _safe(lambda: setattr(page, "theme", ft.Theme(color_scheme_seed=CYAN)))
     page.bgcolor = BG
     page.padding = 0
-    _safe(lambda: setattr(page, "locale_configuration", ft.LocaleConfiguration(
-        supported_locales=[ft.Locale("ar"), ft.Locale("en")], current_locale=ft.Locale("ar"))))
+    _safe(
+        lambda: setattr(
+            page,
+            "locale_configuration",
+            ft.LocaleConfiguration(
+                supported_locales=[ft.Locale("ar"), ft.Locale("en")],
+                current_locale=ft.Locale("ar"),
+            ),
+        )
+    )
     try:
         view = App(page)
         page.add(view.build())
     except Exception:
-        tb = traceback.format_exc()
-        page.add(ft.SafeArea(content=ft.Container(
-            padding=16, expand=True, bgcolor=BG,
-            content=ft.Column([
-                ft.Text("تعذر تشغيل الواجهة", size=18, color=PINK, weight=ft.FontWeight.BOLD),
-                ft.Text(
-                    "حدث خطأ أثناء بناء الواجهة. انسخ التفاصيل أدناه وأرسلها للمطور.",
-                    size=13, color=MUT,
+        page.add(
+            ft.SafeArea(
+                content=ft.Container(
+                    padding=16,
+                    content=ft.Column(
+                        [
+                            ft.Text("تعذر تشغيل الواجهة", size=18, color=PINK, weight=ft.FontWeight.BOLD),
+                            ft.Text(traceback.format_exc(), size=11, color=TEXT, selectable=True),
+                        ],
+                        scroll=ft.ScrollMode.AUTO,
+                    ),
+                    expand=True,
                 ),
-                ft.Container(
-                    content=ft.Text(tb, size=11, color=TEXT, selectable=,
-                    padding=12, border_radius=12, bgcolor=PLATE,
-                    border=ft.Border.all(1, _op(PINK, 0.35)),
-                ),
-            ], scroll=ft.ScrollMode.AUTO, spacing=12, expand=True),
-        ), expand=True))
+                expand=True,
+            )
+        )
         return
     await view.start()
 
@@ -1151,4 +1662,3 @@ async def main(page: ft.Page) -> None:
 if __name__ == "__main__":
     runner = getattr(ft, "run", None) or getattr(ft, "app", None)
     runner(main)
-    
