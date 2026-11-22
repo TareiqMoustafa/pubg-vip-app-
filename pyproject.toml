@@ -1,6 +1,6 @@
 [project]
 name = "lader-tareiq"
-version = "2.2.1"
+version = "2.2.2"
 description = "Lader Tareiq — Smart License, OTA & Game Resource Manager"
 readme = "README.md"
 requires-python = ">=3.10"
