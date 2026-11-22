@@ -1,20 +1,22 @@
-"""الإعدادات المركزية للتطبيق — عدّل القيم الأساسية من هنا بسهولة."""
+"""الإعدادات المركزية لتطبيق Tareiq Nexus VIP."""
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Config:
     # هوية التطبيق والمطور
-    APP_TITLE: str = "PUBG VIP Manager"
-    APP_VERSION: str = "2.0.2"
+    APP_TITLE: str = "Tareiq Nexus VIP"
+    APP_VERSION: str = "2.1.0"
+    OTA_VERSION: str = "1.0.0"
     DEVELOPER_NAME: str = "Tareiq"
-    DEVELOPER_TAGLINE: str = "Engineered by Tareiq"
+    DEVELOPER_TAGLINE: str = "Tareiq Core • Precision Patch & Shizuku Suite"
 
-    # سيرفر التحقق
+    # سيرفر التحقق والتحديثات
     SERVER_URL: str = "https://pak-license-server.vercel.app"
     VERIFY_ENDPOINT: str = "/api/verify"
     APP_CONFIG_ENDPOINT: str = "/api/app-config"
     HEALTH_ENDPOINT: str = "/api/health"
+    OTA_ENDPOINT: str = "/api/ota-bundle"
 
     # ملف/أرشيف الباتش الاحتياطي (الأصل يُجلب ديناميكياً من لوحة التحكم)
     PATCH_DOWNLOAD_URL: str = "https://files.catbox.moe/nwnc4y.pak"
@@ -30,6 +32,7 @@ class Config:
     # الشبكة
     VERIFY_TIMEOUT: float = 20.0
     DOWNLOAD_TIMEOUT: float = 300.0
+    OTA_TIMEOUT: float = 25.0
     DOWNLOAD_RETRIES: int = 3
     CHUNK_SIZE: int = 64 * 1024
     USER_AGENT: str = (
