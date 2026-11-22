@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import com.ladertareiq.app.data.ApiClient
 import com.ladertareiq.app.data.AppConfig
 import com.ladertareiq.app.data.AppState
+import com.ladertareiq.app.data.InstallResult
 import com.ladertareiq.app.data.PackageInstallerManager
 import com.ladertareiq.app.data.PreparedPackageItem
 import com.ladertareiq.app.data.ShizukuStatus
@@ -289,7 +290,7 @@ private fun LaderTareiqScreen(
         if (cfg.ok) {
             val remoteOta = cfg.fields["ota_version"]?.takeIf { it.isNotBlank() } ?: state.otaVersion
             val otaRes = ApiClient.fetchOtaBundle(remoteOta)
-            val updated = store.save { cur ->
+            store.save { cur ->
                 cur.copy(
                     maintenance = cfg.fields["maintenance"]?.toBooleanStrictOrNull() ?: false,
                     notice = cfg.fields["notice"] ?: cur.notice,
@@ -303,15 +304,7 @@ private fun LaderTareiqScreen(
                 )
             }
             val logged = store.addLog("success", "تمت مزامنة الإعدادات وOTA.")
-            onStateChange(
-                logged.copy(
-                    maintenance = updated.maintenance,
-                    notice = updated.notice,
-                    latestAppVersion = updated.latestAppVersion,
-                    otaVersion = updated.otaVersion,
-                    otaNotes = updated.otaNotes
-                )
-            )
+            onStateChange(logged)
             if (!silent) notify("تمت مزامنة الإعدادات بنجاح.")
         } else {
             val logged = store.addLog("warn", cfg.message)
@@ -334,7 +327,7 @@ private fun LaderTareiqScreen(
                 val res = ApiClient.verifyLicense(licenseInput, deviceId)
                 val stCode = res.fields["status"] ?: if (res.ok) "active" else "inactive"
                 val activePkg = packageInput.trim().ifBlank { AppConfig.DEFAULT_GAME_PACKAGE }
-                val next = if (res.ok && stCode.equals("active", ignoreCase = true)) {
+                if (res.ok && stCode.equals("active", ignoreCase = true)) {
                     store.save { cur ->
                         cur.copy(
                             licenseKey = licenseInput.trim().uppercase(Locale.US),
@@ -365,7 +358,7 @@ private fun LaderTareiqScreen(
                     }
                 }
                 val logged = store.addLog(if (res.ok) "success" else "error", res.message)
-                onStateChange(logged.copy(gamePackage = next.gamePackage))
+                onStateChange(logged)
                 notify(res.message)
             } finally {
                 isBusy = false
@@ -390,7 +383,7 @@ private fun LaderTareiqScreen(
         )
         onRefreshPrepared()
         if (res.ok) {
-            val saved = store.save { cur ->
+            store.save { cur ->
                 cur.copy(
                     installedPatchVersion = cur.latestPatchVersion.ifBlank { "1" },
                     lastPreparedPath = res.outputPath,
@@ -398,13 +391,7 @@ private fun LaderTareiqScreen(
                 )
             }
             val logged = store.addLog("success", res.message)
-            onStateChange(
-                logged.copy(
-                    installedPatchVersion = saved.installedPatchVersion,
-                    lastPreparedPath = saved.lastPreparedPath,
-                    lastVerifiedSha256 = saved.lastVerifiedSha256
-                )
-            )
+            onStateChange(logged)
         } else {
             val logged = store.addLog("error", res.message)
             onStateChange(logged)
@@ -428,19 +415,14 @@ private fun LaderTareiqScreen(
             onStatus = { st -> progressText = st }
         )
         if (res.ok) {
-            val saved = store.save { cur ->
+            store.save { cur ->
                 cur.copy(
                     gamePackage = targetPkg,
                     lastDeployedTarget = res.outputPath
                 )
             }
             val logged = store.addLog("success", res.message)
-            onStateChange(
-                logged.copy(
-                    gamePackage = saved.gamePackage,
-                    lastDeployedTarget = saved.lastDeployedTarget
-                )
-            )
+            onStateChange(logged)
         } else {
             val logged = store.addLog("error", res.message)
             onStateChange(logged)
@@ -524,9 +506,9 @@ private fun LaderTareiqScreen(
             try {
                 val res = PackageInstallerManager.backupTargetPaks(context, pkg)
                 if (res.ok) {
-                    val saved = store.save { it.copy(lastBackupPath = res.outputPath, lastBackupPackage = pkg) }
+                    store.save { it.copy(lastBackupPath = res.outputPath, lastBackupPackage = pkg) }
                     val logged = store.addLog("success", res.message)
-                    onStateChange(logged.copy(lastBackupPath = saved.lastBackupPath, lastBackupPackage = saved.lastBackupPackage))
+                    onStateChange(logged)
                 } else {
                     val logged = store.addLog("warn", res.message)
                     onStateChange(logged)
@@ -702,9 +684,9 @@ private fun LaderTareiqScreen(
                             try {
                                 val vr = PackageInstallerManager.verifyLocalItemSha256(item.path, state.patchSha256)
                                 if (vr.ok && vr.sha256.isNotBlank()) {
-                                    val saved = store.save { it.copy(lastVerifiedSha256 = vr.sha256) }
+                                    store.save { it.copy(lastVerifiedSha256 = vr.sha256) }
                                     val logged = store.addLog("success", vr.message)
-                                    onStateChange(logged.copy(lastVerifiedSha256 = saved.lastVerifiedSha256))
+                                    onStateChange(logged)
                                 } else {
                                     val logged = store.addLog("warn", vr.message)
                                     onStateChange(logged)
@@ -724,9 +706,9 @@ private fun LaderTareiqScreen(
                                 val er = PackageInstallerManager.extractZipLocally(context, item.path)
                                 onRefreshPrepared()
                                 if (er.ok) {
-                                    val saved = store.save { it.copy(lastPreparedPath = er.outputPath) }
+                                    store.save { it.copy(lastPreparedPath = er.outputPath) }
                                     val logged = store.addLog("success", er.message)
-                                    onStateChange(logged.copy(lastPreparedPath = saved.lastPreparedPath))
+                                    onStateChange(logged)
                                 } else {
                                     val logged = store.addLog("error", er.message)
                                     onStateChange(logged)
@@ -787,8 +769,7 @@ private fun LaderTareiqScreen(
                     .padding(14.dp),
                 state = state,
                 onCopyAllLogs = {
-                    val formatted = state.logs.reversed().joinToString("
-") {
+                    val formatted = state.logs.reversed().joinToString("\n") {
                         "[${it.time}] [${it.kind.uppercase(Locale.US)}] ${it.message}"
                     }
                     if (formatted.isBlank()) {
