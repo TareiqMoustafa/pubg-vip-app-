@@ -5,10 +5,10 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Config:
     # هوية التطبيق والمطور
-    APP_TITLE: str = "Tareiq Nexus VIP"
+    APP_TITLE: str = "Lader Tar4iq"
     APP_VERSION: str = "2.1.0"
     OTA_VERSION: str = "1.0.0"
-    DEVELOPER_NAME: str = "Tareiq"
+    DEVELOPER_NAME: str = "Tar4iq"
     DEVELOPER_TAGLINE: str = "Tareiq Core • Precision Patch & Shizuku Suite"
 
     # سيرفر التحقق والتحديثات
