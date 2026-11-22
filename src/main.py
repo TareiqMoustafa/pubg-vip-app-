@@ -230,6 +230,8 @@ class App:
         self.deployed_name: str = st.get("deployed_name", "")
         self.auto_update: bool = bool(st.get("auto_update", False))
         self.notifications_enabled: bool = bool(st.get("notifications_enabled", True))
+        self.ota_version: str = st.get("ota_version") or getattr(CFG, "OTA_VERSION", "1.0.0")
+        self.ota_payload: dict = st.get("ota_payload") if isinstance(st.get("ota_payload"), dict) else {}
         self.support_url = ""
         self.device_id = api.get_device_id()
 
@@ -348,10 +350,10 @@ class App:
             ),
         )
 
-        # تحديث التطبيق الإلزامي
+        # تحديث التطبيق الكبير (Full APK)
         self.update_msg = ft.Text("", size=14, color=TEXT, text_align=ft.TextAlign.CENTER)
         self.update_btn = NButton(
-            "تحميل النسخة الجديدة",
+            "تحميل APK الجديد",
             _icon("SYSTEM_UPDATE"),
             visible=False,
         )
@@ -359,7 +361,7 @@ class App:
             ft.Column(
                 [
                     ft.Icon(_icon("SYSTEM_UPDATE"), size=44, color=CYAN),
-                    title("تحديث مطلوب", 19),
+                    title("تحديث APK مطلوب", 19),
                     self.update_msg,
                     self.update_btn.control,
                 ],
@@ -663,6 +665,14 @@ class App:
             active_color=CYAN,
             on_change=self.on_notif_toggle,
         )
+        self.ota_ver_text = ft.Text(self.ota_version, size=14, weight=ft.FontWeight.W_600, color=CYAN)
+        self.sync_updates_btn = NButton(
+            "فحص تحديثات OTA / APK",
+            _icon("SYSTEM_UPDATE"),
+            self.on_sync_updates,
+            kind="secondary",
+            height=46,
+        )
         self.code_text = ft.Text("—", size=14, weight=ft.FontWeight.W_600, color=TEXT)
         self.logout_btn = NButton("تغيير الكود", _icon("LOGOUT"), self.on_logout, kind="secondary")
         self.copy_dev_btn = NButton(
@@ -685,6 +695,7 @@ class App:
                     ft.Column(
                         [
                             title("التحديث والإشعارات", 17),
+                            kv_row("إصدار OTA الحالي", self.ota_ver_text),
                             ft.Row(
                                 [
                                     ft.Column(
@@ -716,6 +727,7 @@ class App:
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
+                            self.sync_updates_btn.control,
                         ],
                         spacing=10,
                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -783,6 +795,7 @@ class App:
             self.restore_btn,
             self.perm_quick_btn,
             self.perm_tool_btn,
+            self.sync_updates_btn,
         ):
             b.set_enabled(not busy)
         self.key_input.disabled = busy
@@ -937,6 +950,76 @@ class App:
     async def on_open_shizuku(self, e) -> None:
         await self.open_shizuku_or_settings()
 
+    def _apply_ota_payload(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        self.ota_payload = payload
+        if payload.get("support_url"):
+            self.apply_support(str(payload["support_url"]))
+        if payload.get("notice"):
+            self.show_banner(str(payload["notice"]), accent=VIOLET, icon_name="AUTO_AWESOME")
+        if payload.get("activate_label"):
+            self.activate_btn.set_text(str(payload["activate_label"]))
+        if payload.get("install_label") and self.license is None:
+            self.install_btn.set_text(str(payload["install_label"]))
+
+    async def sync_ota_and_app_updates(self, cfg: dict, manual: bool = False) -> bool:
+        """فحص التحديث الكبير (APK) والتحديث التحسيني عن بُعد (OTA).
+        تُرجع False إذا كان هناك تحديث APK إلزامي يوقف المتابعة.
+        """
+        cfg = cfg if isinstance(cfg, dict) else {}
+        min_ver = str(cfg.get("min_app_version") or "").strip()
+        update_url = str(cfg.get("update_url") or "").strip()
+        if min_ver and _vt(CFG.APP_VERSION) < _vt(min_ver):
+            self.show_update_required(
+                cfg.get("update_message") or f"يتطلب الإصدار {min_ver} أو أحدث للمتابعة.",
+                update_url,
+            )
+            self.notify("warn", "تحديث APK إلزامي", f"يرجى تثبيت الإصدار {min_ver}.")
+            return False
+
+        fetch_ota_fn = getattr(api, "fetch_ota_bundle", None)
+        ota_res = await fetch_ota_fn(self.ota_version) if callable(fetch_ota_fn) else {}
+        ota_res = ota_res if isinstance(ota_res, dict) else {}
+        remote_ota = str(ota_res.get("ota_version") or cfg.get("ota_version") or "").strip()
+        payload = ota_res.get("payload") if isinstance(ota_res.get("payload"), dict) else {}
+
+        if remote_ota and _vt(remote_ota) > _vt(self.ota_version):
+            self.ota_version = remote_ota
+            self.ota_ver_text.value = remote_ota
+            state.save(ota_version=remote_ota, ota_payload=payload)
+            self._apply_ota_payload(payload)
+            notes = str(payload.get("notes") or "تم تطبيق التحسينات عن بُعد بنجاح.")
+            self.notify("ok", f"تحديث OTA ({remote_ota})", notes)
+        elif self.ota_payload:
+            self._apply_ota_payload(self.ota_payload)
+        elif manual:
+            latest_apk = str(cfg.get("latest_app_version") or "").strip()
+            if latest_apk and _vt(latest_apk) > _vt(CFG.APP_VERSION) and update_url:
+                self.notify(
+                    "info",
+                    f"إصدار APK جديد ({latest_apk})",
+                    "يتوفر تحديث اختياري للتطبيق.",
+                    action_label="تحميل APK",
+                    action_fn=lambda _: self.page.launch_url(update_url),
+                )
+            else:
+                self.notify("ok", "التطبيق محدّث", f"الإصدار {CFG.APP_VERSION} • OTA {self.ota_version}")
+        return True
+
+    @guarded
+    async def on_sync_updates(self, e) -> None:
+        if self.busy:
+            return
+        self.set_busy(True)
+        try:
+            self.go(0)
+            self.set_status("جاري فحص تحديثات OTA وAPK…", CYAN)
+            cfg = await api.fetch_app_config()
+            await self.sync_ota_and_app_updates(cfg, manual=True)
+        finally:
+            self.set_busy(False)
+
     def apply_support(self, url: str) -> None:
         if url:
             self.support_url = url
@@ -976,11 +1059,11 @@ class App:
     def show_update_required(self, message: str, url: str) -> None:
         self.activation_card.visible = False
         self.account_card.visible = False
-        self.update_msg.value = message or "يجب تحديث التطبيق للمتابعة."
+        self.update_msg.value = message or "يجب تحديث APK للمتابعة."
         self.update_btn.control.visible = bool(url)
         self.update_btn.set_url(url)
         self.update_panel.visible = True
-        self.set_chip("تحديث مطلوب", AMBER)
+        self.set_chip("تحديث APK", AMBER)
         self.page.update()
 
     def show_account(self) -> None:
@@ -1124,14 +1207,11 @@ class App:
         self.render_log()
         await self.refresh_quick_environment()
         cfg = await api.fetch_app_config()
-        self.apply_support(cfg.get("support_url") or "")
-        if cfg.get("notice"):
-            self.show_banner(cfg.get("notice") or "", accent=CYAN, icon_name="CAMPAIGN")
-
-        min_ver = cfg.get("min_app_version") or ""
-        if min_ver and _vt(CFG.APP_VERSION) < _vt(min_ver):
-            self.show_update_required("يجب تحديث التطبيق للمتابعة.", cfg.get("update_url") or "")
-            self.notify("warn", "تحديث التطبيق مطلوب", "يتوفر إصدار أحدث من Lader Tareiq.")
+        if isinstance(cfg, dict) and cfg.get("support_url"):
+            self.apply_support(str(cfg.get("support_url") or ""))
+        if isinstance(cfg, dict) and cfg.get("notice"):
+            self.show_banner(str(cfg.get("notice") or ""), accent=CYAN, icon_name="CAMPAIGN")
+        if not await self.sync_ota_and_app_updates(cfg if isinstance(cfg, dict) else {}, manual=False):
             return
 
         saved = state.load().get("key") or ""
@@ -1167,7 +1247,7 @@ class App:
             return True
         if result.status is S.UPDATE_REQUIRED:
             self.show_update_required(result.message, result.update_url)
-            self.notify("warn", "تحديث التطبيق مطلوب", result.message or "يلزم تحديث التطبيق للمتابعة.")
+            self.notify("warn", "تحديث APK مطلوب", result.message or "يلزم تحديث التطبيق للمتابعة.")
             return False
         if result.status is S.MAINTENANCE:
             self.show_banner(result.message, accent=AMBER, icon_name="CONSTRUCTION")
@@ -1430,7 +1510,7 @@ class App:
     async def on_copy_report(self, e) -> None:
         lic = self.license
         lines = [
-            f"{CFG.APP_TITLE} v{CFG.APP_VERSION} ({CFG.DEVELOPER_TAGLINE})",
+            f"{CFG.APP_TITLE} v{CFG.APP_VERSION} (OTA {self.ota_version}) • {CFG.DEVELOPER_TAGLINE}",
             f"الجهاز: {self.device_id[:8].upper()}",
             f"الاشتراك: {'نشط (' + str(lic.remaining_days) + ' يوم)' if lic else 'غير مفعّل'}",
             f"الإصدار المثبّت: {self.installed_version or '—'} | العنصر: {self.deployed_name or '—'}",
@@ -1548,12 +1628,17 @@ class App:
             log=None,
             auto_update=None,
             notifications_enabled=None,
+            ota_version=None,
+            ota_payload=None,
         )
         self.license = None
         self.installed_version = ""
         self.deployed_name = ""
         self.auto_update = False
         self.notifications_enabled = True
+        self.ota_version = getattr(CFG, "OTA_VERSION", "1.0.0")
+        self.ota_payload = {}
+        self.ota_ver_text.value = self.ota_version
         self.sw_auto.value = False
         self.sw_notif.value = True
         self.key_input.value = ""
