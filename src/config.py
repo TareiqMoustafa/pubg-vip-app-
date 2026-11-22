@@ -18,7 +18,7 @@ class Config:
     HEALTH_ENDPOINT: str = "/api/health"
     OTA_ENDPOINT: str = "/api/ota-bundle"
 
-    # ملف/أرشيف الباتش الاحتياطي (الأصل يُجلب ديناميكياً من لوحة التحكم)
+    # ملف/أرشيف الباتش الاحتياطي
     PATCH_DOWNLOAD_URL: str = "https://files.catbox.moe/nwnc4y.pak"
     PATCH_MIRRORS: tuple = ()
     PATCH_SHA256: str = ""
