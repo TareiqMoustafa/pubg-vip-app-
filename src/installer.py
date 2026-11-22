@@ -31,23 +31,15 @@ def _sanitize_filename(name: str, default_name: str = "patch_update.pak") -> str
 
 
 def get_downloads_dir() -> Path:
-    candidates: list[Path] = []
     for env_key in ("FLET_APP_STORAGE_DATA", "FLET_APP_STORAGE_TEMP"):
         val = os.environ.get(env_key)
         if val:
-            candidates.append(Path(val) / "lader_tareiq_packages")
-    candidates.append(Path.home() / ".lader_tareiq" / "packages")
-
-    for target in candidates:
-        try:
-            target.mkdir(parents=True, exist_ok=True)
-            test_file = target / ".write_test"
-            test_file.write_text("ok", encoding="utf-8")
-            test_file.unlink(missing_ok=True)
-            return target
-        except Exception:
-            continue
-
+            target = Path(val) / "lader_tareiq_packages"
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                return target
+            except Exception:
+                pass
     fallback = Path("/tmp/lader_tareiq_packages")
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback

@@ -36,7 +36,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "notice": "",
     "support_url": "",
     "maintenance": False,
-    "auto_update": True,
+    "auto_update": False,
     "notifications_enabled": True,
     "last_synced_at": "",
     "logs": [],
@@ -44,10 +44,21 @@ DEFAULT_STATE: dict[str, Any] = {
 
 
 def _storage_dir() -> Path:
-    env_dir = os.environ.get("FLET_APP_STORAGE_DATA") or os.environ.get("FLET_APP_STORAGE_TEMP")
-    base = Path(env_dir) if env_dir else (Path.home() / ".lader_tareiq")
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    for env_key in ("FLET_APP_STORAGE_DATA", "FLET_APP_STORAGE_TEMP"):
+        val = os.environ.get(env_key)
+        if val:
+            p = Path(val)
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+            except Exception:
+                pass
+    fallback = Path("/tmp/lader_tareiq_state")
+    try:
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+    except Exception:
+        return Path(".")
 
 
 def _state_file() -> Path:

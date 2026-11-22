@@ -39,15 +39,19 @@ from state import add_log, clear_logs, load as load_state, save as save_state
 from ui_components import build_metric_tile, build_section_card, status_palette
 
 
-def main(page: ft.Page) -> None:
-    page.title = APP_TITLE
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = COLOR_BG
-    page.padding = 0
-    page.scroll = None
+def _icon_or_none(name: str):
+    icons_obj = getattr(ft, "Icons", None) or getattr(ft, "icons", None)
+    if icons_obj is None:
+        return None
+    return getattr(icons_obj, name, None)
 
+
+def main(page: ft.Page) -> None:
     try:
-        page.rtl = True
+        page.title = APP_TITLE
+        page.theme_mode = ft.ThemeMode.DARK
+        page.bgcolor = COLOR_BG
+        page.padding = 0
     except Exception:
         pass
 
@@ -56,22 +60,27 @@ def main(page: ft.Page) -> None:
     busy_lock = threading.Lock()
     is_busy = False
 
+    def _safe_update() -> None:
+        try:
+            page.update()
+        except Exception:
+            pass
+
     notice_banner_text = ft.Text(
         state.get("notice") or f"مرحباً بك في {APP_TITLE} — جاهز للتحقق والمزامنة.",
         size=12.5,
         color=COLOR_TEXT,
         expand=True,
     )
+    banner_icon = _icon_or_none("CAMPAIGN_OUTLINED") or _icon_or_none("INFO")
+    banner_controls: list[ft.Control] = []
+    if banner_icon is not None:
+        banner_controls.append(ft.Icon(banner_icon, color=COLOR_CYAN, size=18))
+    banner_controls.append(notice_banner_text)
+
     notice_banner = ft.Container(
         content=ft.Row(
-            controls=[
-                ft.Icon(
-                    getattr(ft.Icons, "CAMPAIGN_OUTLINED", None) or getattr(ft.Icons, "INFO", None),
-                    color=COLOR_CYAN,
-                    size=18,
-                ),
-                notice_banner_text,
-            ],
+            controls=banner_controls,
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
@@ -149,19 +158,25 @@ def main(page: ft.Page) -> None:
         color=COLOR_MUTED,
     )
 
-    auto_update_switch = ft.Switch(
-        label="تحديث تلقائي عند التشغيل",
-        value=bool(state.get("auto_update", True)),
-        active_color=COLOR_CYAN,
-    )
-    notifications_switch = ft.Switch(
-        label="تسجيل التنبيهات في السجل",
-        value=bool(state.get("notifications_enabled", True)),
-        active_color=COLOR_VIOLET,
-    )
     device_id_txt = ft.Text(f"معرّف الجهاز: {device_id}", size=12, color=COLOR_MUTED)
     app_ver_txt = ft.Text(f"نسخة التطبيق: {APP_VERSION}", size=12, color=COLOR_MUTED)
     logs_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO)
+
+    def _show_snack(msg: str) -> None:
+        try:
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text(msg, color=COLOR_TEXT),
+                bgcolor="#0E1733",
+            )
+            page.snack_bar.open = True
+            _safe_update()
+        except Exception:
+            pass
+
+    def _start_bg(fn) -> None:
+        if is_busy:
+            return
+        threading.Thread(target=fn, daemon=True).start()
 
     activate_btn = ft.ElevatedButton(
         text="تحقق وفعّل",
@@ -195,17 +210,6 @@ def main(page: ft.Page) -> None:
             shape=ft.RoundedRectangleBorder(radius=12),
         ),
     )
-
-    def _show_snack(msg: str) -> None:
-        try:
-            page.snack_bar = ft.SnackBar(
-                content=ft.Text(msg, color=COLOR_TEXT),
-                bgcolor="#0E1733",
-            )
-            page.snack_bar.open = True
-            page.update()
-        except Exception:
-            pass
 
     def _set_busy(val: bool) -> None:
         nonlocal is_busy
@@ -328,16 +332,11 @@ def main(page: ft.Page) -> None:
         else:
             update_alert_card.visible = False
 
-        auto_update_switch.value = bool(state.get("auto_update", True))
-        notifications_switch.value = bool(state.get("notifications_enabled", True))
         device_id_txt.value = f"معرّف الجهاز: {device_id}"
         app_ver_txt.value = f"نسخة التطبيق: {APP_VERSION}"
 
         _refresh_logs_ui()
-        try:
-            page.update()
-        except Exception:
-            pass
+        _safe_update()
 
     def _record_event(kind: str, msg: str) -> None:
         if state.get("notifications_enabled", True) or kind == "error":
@@ -447,18 +446,12 @@ def main(page: ft.Page) -> None:
         progress_label.visible = True
         progress_bar.value = 0.02
         progress_label.value = "بدء عملية التحميل..."
-        try:
-            page.update()
-        except Exception:
-            pass
+        _safe_update()
 
         def progress_cb(frac: float, label: str) -> None:
             progress_bar.value = frac
             progress_label.value = label
-            try:
-                page.update()
-            except Exception:
-                pass
+            _safe_update()
 
         try:
             inst_res = download_and_prepare(
@@ -499,18 +492,13 @@ def main(page: ft.Page) -> None:
         _refresh_ui()
         _show_snack("تم مسح السجل.")
 
-    def _start_bg(fn) -> None:
-        if is_busy:
-            return
-        threading.Thread(target=fn, daemon=True).start()
-
     home_view = ft.Column(
         controls=[
             notice_banner,
             update_alert_card,
             build_section_card(
                 title="حالة الترخيص والاشتراك",
-                subtitle=f"الهوية: {DEVELOPER_NAME} — {DEVELOPER_TAGLINE}",
+                subtitle=f"{DEVELOPER_NAME} — {DEVELOPER_TAGLINE}",
                 accent_color=COLOR_CYAN,
                 content=ft.Column(
                     controls=[
@@ -571,14 +559,14 @@ def main(page: ft.Page) -> None:
                 content=ft.Column(
                     controls=[
                         ft.Switch(
-                            label="تحديث تلقائي عند التشغيل",
-                            value=auto_update_switch.value,
+                            label="مزامنة تلقائية عند فتح التطبيق",
+                            value=bool(state.get("auto_update", False)),
                             active_color=COLOR_CYAN,
                             on_change=_on_toggle_auto_update,
                         ),
                         ft.Switch(
                             label="تسجيل التنبيهات في السجل",
-                            value=notifications_switch.value,
+                            value=bool(state.get("notifications_enabled", True)),
                             active_color=COLOR_VIOLET,
                             on_change=_on_toggle_notifications,
                         ),
@@ -681,22 +669,17 @@ def main(page: ft.Page) -> None:
             content_holder.content = logs_view
         _refresh_ui()
 
+    home_icon = _icon_or_none("VERIFIED_USER_OUTLINED") or _icon_or_none("HOME")
+    settings_icon = _icon_or_none("SETTINGS_OUTLINED") or _icon_or_none("SETTINGS")
+    logs_icon = _icon_or_none("HISTORY") or _icon_or_none("LIST")
+
     nav_bar = ft.NavigationBar(
         bgcolor=COLOR_BG_ALT,
         indicator_color="#14234D",
         destinations=[
-            ft.NavigationBarDestination(
-                icon=getattr(ft.Icons, "VERIFIED_USER_OUTLINED", None) or getattr(ft.Icons, "HOME", None),
-                label="الرئيسية",
-            ),
-            ft.NavigationBarDestination(
-                icon=getattr(ft.Icons, "SETTINGS_OUTLINED", None) or getattr(ft.Icons, "SETTINGS", None),
-                label="الإعدادات",
-            ),
-            ft.NavigationBarDestination(
-                icon=getattr(ft.Icons, "HISTORY", None) or getattr(ft.Icons, "LIST", None),
-                label="السجل",
-            ),
+            ft.NavigationBarDestination(icon=home_icon, label="الرئيسية"),
+            ft.NavigationBarDestination(icon=settings_icon, label="الإعدادات"),
+            ft.NavigationBarDestination(icon=logs_icon, label="السجل"),
         ],
         on_change=lambda e: _switch_tab(int(e.control.selected_index or 0)),
     )
@@ -714,7 +697,7 @@ def main(page: ft.Page) -> None:
     )
 
     _refresh_ui()
-    if state.get("auto_update", True):
+    if bool(state.get("auto_update", False)):
         _start_bg(lambda: _sync_remote(manual=False))
 
 

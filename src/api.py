@@ -47,7 +47,7 @@ def get_device_id() -> str:
         if len(cleaned) >= 8:
             return cleaned[:64]
 
-    base = Path(os.environ.get("FLET_APP_STORAGE_DATA") or (Path.home() / ".lader_tareiq"))
+    base = Path(os.environ.get("FLET_APP_STORAGE_DATA") or "/tmp/lader_tareiq_state")
     id_file = base / "device_id.txt"
     try:
         if id_file.exists():

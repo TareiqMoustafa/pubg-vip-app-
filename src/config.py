@@ -6,7 +6,7 @@ import os
 APP_TITLE: str = "Lader Tareiq"
 DEVELOPER_NAME: str = "Lader Tareiq"
 DEVELOPER_TAGLINE: str = "Smart License • OTA • Resource Engine"
-APP_VERSION: str = "2.2.0"
+APP_VERSION: str = "2.2.1"
 OTA_VERSION: str = "1.0.0"
 
 SERVER_URL: str = os.environ.get(
@@ -20,7 +20,7 @@ DEFAULT_GAME_PACKAGE: str = "com.tencent.ig"
 DEFAULT_TARGET_FILE: str = "res_pufferpatch.pak"
 DEFAULT_DEPLOY_MODE: str = "auto"
 
-REQUEST_TIMEOUT: float = 12.0
+REQUEST_TIMEOUT: float = 10.0
 DOWNLOAD_TIMEOUT: float = 45.0
 MAX_DOWNLOAD_BYTES: int = 512 * 1024 * 1024
 
