@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -26,6 +26,11 @@ jobs:
           ls -la
           ls -la src
           test -f src/main.py
+
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev clang cmake ninja-build pkg-config
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,14 +44,19 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Accept Android SDK Licenses
+        run: |
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT" -name "sdkmanager" -type f 2>/dev/null | head -n 1 || true)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses > /dev/null 2>&1 || true
+          fi
+
       - name: Install Flet
         run: |
           python -m pip install --upgrade pip
           pip install "flet-cli==1.0.*" "flet==1.0.*" httpx
-
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Build APK
         run: flet build apk --yes --verbose --build-number ${{ github.run_number }}
