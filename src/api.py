@@ -1,6 +1,8 @@
-"""التعامل مع سيرفر التراخيص + معرّف الجهاز الثابت + قياس زمن الاستجابة."""
+"""التعامل مع سيرفر التراخيص + معرّف الجهاز + التحديث عن بُعد (OTA) والتحديث الكبير."""
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import time
 import uuid
@@ -43,7 +45,7 @@ class LicenseResult:
     update_url: str = ""
     patch_sha256: str = ""
     patch_notes: str = ""
-    deploy_mode: str = "auto"  # "auto" | "pak" | "folder"
+    deploy_mode: str = "auto"
 
 
 def get_device_id() -> str:
@@ -84,7 +86,7 @@ async def ping_server() -> tuple[bool, int]:
 
 
 async def fetch_app_config() -> dict:
-    """إعلان/رابط دعم/وضع الصيانة قبل إدخال الكود."""
+    """جلب الإعدادات العامة: الصيانة، التحديث الكبير (APK)، وبيانات OTA."""
     url = CFG.SERVER_URL.rstrip("/") + CFG.APP_CONFIG_ENDPOINT
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -95,9 +97,37 @@ async def fetch_app_config() -> dict:
         return {}
 
 
+async def fetch_ota_bundle(current_ota: str = "") -> dict:
+    """جلب حزمة التحديث التحسيني (OTA) والتحقق من بصمة SHA-256 إن وجدت."""
+    url = CFG.SERVER_URL.rstrip("/") + CFG.OTA_ENDPOINT
+    params = {"ota_version": current_ota or CFG.OTA_VERSION, "app_version": CFG.APP_VERSION}
+    try:
+        async with httpx.AsyncClient(timeout=CFG.OTA_TIMEOUT) as client:
+            res = await client.get(url, params=params)
+        if res.status_code != 200:
+            return {}
+        data = res.json()
+        if not isinstance(data, dict):
+            return {}
+        expected_sha = str(data.get("sha256") or "").strip().lower()
+        payload = data.get("payload")
+        if expected_sha and isinstance(payload, dict):
+            canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if hashlib.sha256(canonical).hexdigest().lower() != expected_sha:
+                return {}
+        return data
+    except (httpx.HTTPError, ValueError):
+        return {}
+
+
 async def verify_license(key: str) -> LicenseResult:
     url = CFG.SERVER_URL.rstrip("/") + CFG.VERIFY_ENDPOINT
-    payload = {"key": key, "device_id": get_device_id(), "app_version": CFG.APP_VERSION}
+    payload = {
+        "key": key,
+        "device_id": get_device_id(),
+        "app_version": CFG.APP_VERSION,
+        "ota_version": CFG.OTA_VERSION,
+    }
     try:
         async with httpx.AsyncClient(timeout=CFG.VERIFY_TIMEOUT) as client:
             res = await client.post(url, json=payload)
