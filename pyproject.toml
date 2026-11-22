@@ -1,7 +1,7 @@
 [project]
-name = "pubg_vip_manager"
+name = "lader_tareiq"
 version = "2.1.0"
-description = "PUBG VIP Patch & Folder Manager — Crafted by Tareiq"
+description = "Lader Tareiq — Patch & Shizuku Manager"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -10,10 +10,10 @@ dependencies = [
 ]
 
 [tool.flet]
-product = "PUBG VIP Manager"
-org = "com.tareiq.pubgvip"
-company = "Tareiq Dev"
-copyright = "Copyright (C) 2026 Tareiq"
+product = "Lader Tareiq"
+org = "com.ladertareiq.vip"
+company = "Lader Tareiq"
+copyright = "Copyright (C) 2026 Lader Tareiq"
 
 [tool.flet.app]
 path = "src"
