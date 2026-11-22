@@ -6,7 +6,7 @@ from dataclasses import dataclass
 class Config:
     # هوية التطبيق والمطور
     APP_TITLE: str = "PUBG VIP Manager"
-    APP_VERSION: str = "2.0.0"
+    APP_VERSION: str = "2.0.2"
     DEVELOPER_NAME: str = "Tareiq"
     DEVELOPER_TAGLINE: str = "Engineered by Tareiq"
 
