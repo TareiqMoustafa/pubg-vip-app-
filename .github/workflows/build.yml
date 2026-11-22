@@ -34,7 +34,7 @@ jobs:
           cache: pip
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -43,6 +43,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "flet-cli==1.0.*" "flet==1.0.*" httpx
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Build APK
         run: flet build apk --yes --verbose --build-number ${{ github.run_number }}
