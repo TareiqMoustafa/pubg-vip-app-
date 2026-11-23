@@ -4,7 +4,7 @@ object AppConfig {
     const val APP_TITLE = "Lader Tareiq"
     const val DEVELOPER_NAME = "Lader Tareiq"
     const val DEVELOPER_TAGLINE = "Smart License • OTA • Resource & Shizuku Engine"
-    const val APP_VERSION = "2.4.0"
+    const val APP_VERSION = "2.5.0"
     const val OTA_VERSION = "1.0.0"
 
     const val SERVER_URL = "https://pak-license-server.vercel.app"
@@ -14,7 +14,9 @@ object AppConfig {
     const val DEFAULT_DEPLOY_MODE = "auto"
 
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
-    const val SHIZUKU_PERMISSION = "moe.shizuku.permission.API_V23"
+    const val SHIZUKU_MANAGER_PACKAGE = "moe.shizuku.manager"
+    const val SHIZUKU_PERMISSION = "moe.shizuku.manager.permission.API_V23"
+    const val SHIZUKU_REQUEST_CODE = 1042
 
     const val CONNECT_TIMEOUT_MS = 12_000
     const val READ_TIMEOUT_MS = 35_000
