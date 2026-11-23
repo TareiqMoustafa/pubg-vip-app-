@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,7 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
@@ -69,6 +72,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -83,12 +87,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ladertareiq.app.data.ApiClient
 import com.ladertareiq.app.data.AppConfig
 import com.ladertareiq.app.data.AppState
+import com.ladertareiq.app.data.BackupSnapshot
 import com.ladertareiq.app.data.InstallResult
 import com.ladertareiq.app.data.PackageInstallerManager
 import com.ladertareiq.app.data.PreparedPackageItem
@@ -108,6 +115,7 @@ import com.ladertareiq.app.ui.theme.ColorText
 import com.ladertareiq.app.ui.theme.ColorViolet
 import com.ladertareiq.app.ui.theme.LaderTareiqTheme
 import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -116,15 +124,33 @@ class MainActivity : ComponentActivity() {
     private var storageGrantedHolder = mutableStateOf(false)
     private var shizukuStatusHolder = mutableStateOf(ShizukuStatus.NOT_INSTALLED)
     private var preparedItemsHolder = mutableStateOf<List<PreparedPackageItem>>(emptyList())
+    private var backupsHolder = mutableStateOf<List<BackupSnapshot>>(emptyList())
+    private var eventMessageHolder = mutableStateOf<String?>(null)
 
-    private val mediaPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        refreshPermissions()
+        if (PackageInstallerManager.hasShizukuPermission()) {
+            eventMessageHolder.value = "تم اتصال Shizuku ومنح الصلاحية بنجاح."
+        }
+    }
+
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
         refreshPermissions()
     }
 
-    private val shizukuPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+    private val shizukuPermissionResultListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+        if (requestCode == AppConfig.SHIZUKU_REQUEST_CODE) {
+            refreshPermissions()
+            if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                eventMessageHolder.value = "تمت الموافقة على إذن Shizuku بنجاح."
+            } else {
+                eventMessageHolder.value = "تم رفض إذن Shizuku من المستخدم."
+            }
+        }
+    }
+
+    private val mediaPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
     ) {
         refreshPermissions()
     }
@@ -133,6 +159,8 @@ class MainActivity : ComponentActivity() {
         storageGrantedHolder.value = PackageInstallerManager.hasStoragePermissions(this)
         shizukuStatusHolder.value = PackageInstallerManager.inspectShizuku(this)
         preparedItemsHolder.value = PackageInstallerManager.listPreparedItems(this)
+        val currentPkg = if (::store.isInitialized) stateHolder.value.gamePackage else AppConfig.DEFAULT_GAME_PACKAGE
+        backupsHolder.value = PackageInstallerManager.listBackupSnapshots(this, currentPkg)
     }
 
     fun requestStorageAccess() {
@@ -166,41 +194,61 @@ class MainActivity : ComponentActivity() {
         when (current) {
             ShizukuStatus.NOT_INSTALLED, ShizukuStatus.INSTALLED_SERVICE_STOPPED -> {
                 PackageInstallerManager.openShizukuApp(this)
+                eventMessageHolder.value = "افتح تطبيق Shizuku وتأكد من أن الخدمة تعمل (Running) ثم اضغط ربط Shizuku."
             }
             ShizukuStatus.PERMISSION_REQUIRED -> {
-                try {
-                    shizukuPermissionLauncher.launch(AppConfig.SHIZUKU_PERMISSION)
-                } catch (_: Exception) {
+                val requested = PackageInstallerManager.requestShizukuPermissionSdk(AppConfig.SHIZUKU_REQUEST_CODE)
+                if (!requested) {
                     PackageInstallerManager.openShizukuApp(this)
                 }
             }
             ShizukuStatus.READY -> {
                 refreshPermissions()
+                eventMessageHolder.value = "Shizuku متصل وجاهز للعمل بالفعل."
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
+
         store = StateStore(this)
         stateHolder.value = store.load()
         refreshPermissions()
-        requestStorageAccess()
-        requestShizukuAccess()
+
+        if (!storageGrantedHolder.value) {
+            requestStorageAccess()
+        }
+        if (shizukuStatusHolder.value == ShizukuStatus.PERMISSION_REQUIRED) {
+            PackageInstallerManager.requestShizukuPermissionSdk(AppConfig.SHIZUKU_REQUEST_CODE)
+        }
 
         setContent {
-            LaderTareiqTheme {
-                LaderTareiqScreen(
-                    store = store,
-                    state = stateHolder.value,
-                    onStateChange = { stateHolder.value = it },
-                    storageGranted = storageGrantedHolder.value,
-                    shizukuStatus = shizukuStatusHolder.value,
-                    preparedItems = preparedItemsHolder.value,
-                    onRefreshPrepared = { refreshPermissions() },
-                    onRequestStorage = { requestStorageAccess() },
-                    onRequestShizuku = { requestShizukuAccess() }
-                )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                LaderTareiqTheme {
+                    LaderTareiqScreen(
+                        store = store,
+                        state = stateHolder.value,
+                        onStateChange = {
+                            stateHolder.value = it
+                            backupsHolder.value = PackageInstallerManager.listBackupSnapshots(this, it.gamePackage)
+                        },
+                        storageGranted = storageGrantedHolder.value,
+                        shizukuStatus = shizukuStatusHolder.value,
+                        preparedItems = preparedItemsHolder.value,
+                        backups = backupsHolder.value,
+                        externalMessage = eventMessageHolder.value,
+                        onConsumeExternalMessage = { eventMessageHolder.value = null },
+                        onRefreshPrepared = { refreshPermissions() },
+                        onRequestStorage = { requestStorageAccess() },
+                        onRequestShizuku = { requestShizukuAccess() }
+                    )
+                }
             }
         }
     }
@@ -211,6 +259,16 @@ class MainActivity : ComponentActivity() {
         if (::store.isInitialized) {
             stateHolder.value = store.load()
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            Shizuku.removeBinderReceivedListener(binderReceivedListener)
+            Shizuku.removeBinderDeadListener(binderDeadListener)
+            Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
+        } catch (_: Exception) {
+        }
+        super.onDestroy()
     }
 }
 
@@ -225,7 +283,7 @@ private fun statusMeta(status: String): Pair<Color, String> = when (status.lower
 
 private fun shizukuMeta(status: ShizukuStatus): Pair<Color, String> = when (status) {
     ShizukuStatus.READY -> ColorGreen to "Shizuku متصل ومصرّح"
-    ShizukuStatus.PERMISSION_REQUIRED -> ColorAmber to "Shizuku نشط — مطلوب إذن"
+    ShizukuStatus.PERMISSION_REQUIRED -> ColorAmber to "Shizuku نشط — اضغط لمنح الإذن"
     ShizukuStatus.INSTALLED_SERVICE_STOPPED -> ColorAmber to "Shizuku مثبّت — الخدمة متوقفة"
     ShizukuStatus.NOT_INSTALLED -> ColorPink to "Shizuku غير مثبّت"
 }
@@ -238,6 +296,9 @@ private fun LaderTareiqScreen(
     storageGranted: Boolean,
     shizukuStatus: ShizukuStatus,
     preparedItems: List<PreparedPackageItem>,
+    backups: List<BackupSnapshot>,
+    externalMessage: String?,
+    onConsumeExternalMessage: () -> Unit,
     onRefreshPrepared: () -> Unit,
     onRequestStorage: () -> Unit,
     onRequestShizuku: () -> Unit
@@ -260,6 +321,13 @@ private fun LaderTareiqScreen(
     fun notify(msg: String) {
         scope.launch {
             snackbarHostState.showSnackbar(msg)
+        }
+    }
+
+    LaunchedEffect(externalMessage) {
+        if (!externalMessage.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(externalMessage)
+            onConsumeExternalMessage()
         }
     }
 
@@ -414,6 +482,7 @@ private fun LaderTareiqScreen(
             autoBackup = state.autoBackupBeforeDeploy,
             onStatus = { st -> progressText = st }
         )
+        onRefreshPrepared()
         if (res.ok) {
             store.save { cur ->
                 cur.copy(
@@ -505,6 +574,7 @@ private fun LaderTareiqScreen(
             isBusy = true
             try {
                 val res = PackageInstallerManager.backupTargetPaks(context, pkg)
+                onRefreshPrepared()
                 if (res.ok) {
                     store.save { it.copy(lastBackupPath = res.outputPath, lastBackupPackage = pkg) }
                     val logged = store.addLog("success", res.message)
@@ -520,9 +590,10 @@ private fun LaderTareiqScreen(
         }
     }
 
-    fun runRestoreBackup() {
+    fun runRestoreBackup(customBackupPath: String? = null) {
         if (isBusy) return
-        if (state.lastBackupPath.isBlank()) {
+        val chosenPath = customBackupPath?.takeIf { it.isNotBlank() } ?: state.lastBackupPath
+        if (chosenPath.isBlank()) {
             notify("لا توجد نسخة احتياطية محفوظة للاستعادة.")
             return
         }
@@ -530,7 +601,7 @@ private fun LaderTareiqScreen(
         scope.launch {
             isBusy = true
             try {
-                val res = PackageInstallerManager.restoreTargetPaks(context, state.lastBackupPath, pkg)
+                val res = PackageInstallerManager.restoreTargetPaks(context, chosenPath, pkg)
                 val logged = store.addLog(if (res.ok) "success" else "error", res.message)
                 onStateChange(logged)
                 notify(res.message)
@@ -653,10 +724,12 @@ private fun LaderTareiqScreen(
                 storageGranted = storageGranted,
                 shizukuStatus = shizukuStatus,
                 preparedItems = preparedItems,
+                backups = backups,
                 isBusy = isBusy,
                 showProgress = showProgress,
                 progressValue = progressValue,
                 progressText = progressText,
+                onRefreshDiagnostics = onRefreshPrepared,
                 onRequestStorage = onRequestStorage,
                 onRequestShizuku = onRequestShizuku,
                 onVerify = { runVerify() },
@@ -676,7 +749,7 @@ private fun LaderTareiqScreen(
                 onDeploy = { path -> runDeploy(path) },
                 onOneTap = { runOneTapWorkflow() },
                 onBackup = { runBackup() },
-                onRestoreBackup = { runRestoreBackup() },
+                onRestoreBackup = { path -> runRestoreBackup(path) },
                 onVerifyItemSha = { item ->
                     if (!isBusy) {
                         scope.launch {
@@ -849,10 +922,12 @@ private fun HomeTabContent(
     storageGranted: Boolean,
     shizukuStatus: ShizukuStatus,
     preparedItems: List<PreparedPackageItem>,
+    backups: List<BackupSnapshot>,
     isBusy: Boolean,
     showProgress: Boolean,
     progressValue: Float,
     progressText: String,
+    onRefreshDiagnostics: () -> Unit,
     onRequestStorage: () -> Unit,
     onRequestShizuku: () -> Unit,
     onVerify: () -> Unit,
@@ -861,7 +936,7 @@ private fun HomeTabContent(
     onDeploy: (String?) -> Unit,
     onOneTap: () -> Unit,
     onBackup: () -> Unit,
-    onRestoreBackup: () -> Unit,
+    onRestoreBackup: (String?) -> Unit,
     onVerifyItemSha: (PreparedPackageItem) -> Unit,
     onExtractItemZip: (PreparedPackageItem) -> Unit,
     onLaunchGame: () -> Unit,
@@ -947,8 +1022,8 @@ private fun HomeTabContent(
         }
 
         SectionCard(
-            title = "التشخيص السريع والصلاحيات",
-            subtitle = "فحص الشبكة والمساحة الحرة وحالة Shizuku",
+            title = "التشخيص السريع ومحرك Shizuku",
+            subtitle = "فحص الشبكة والمساحة الحرة وصلاحيات Shizuku الفورية",
             accent = ColorAmber
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -959,6 +1034,18 @@ private fun HomeTabContent(
                     Modifier.weight(1f)
                 )
                 MetricBox("المساحة الحرة", freeSpace, ColorCyan, Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(ColorBg)
+                        .border(1.dp, ColorCardBorder, RoundedCornerShape(13.dp))
+                        .padding(horizontal = 6.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(onClick = onRefreshDiagnostics) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, tint = ColorCyan)
+                    }
+                }
             }
 
             Row(
@@ -996,8 +1083,19 @@ private fun HomeTabContent(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                OutlinedButton(onClick = onRequestShizuku) {
-                    Text("ربط Shizuku", color = ColorViolet, fontSize = 12.sp)
+                Button(
+                    onClick = onRequestShizuku,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (shizukuStatus == ShizukuStatus.READY) ColorGreen else ColorViolet,
+                        contentColor = if (shizukuStatus == ShizukuStatus.READY) Color(0xFF04170E) else Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = if (shizukuStatus == ShizukuStatus.READY) "متصل" else "ربط Shizuku",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1227,8 +1325,8 @@ private fun HomeTabContent(
                 }
 
                 OutlinedButton(
-                    onClick = onRestoreBackup,
-                    enabled = !isBusy && state.lastBackupPath.isNotBlank(),
+                    onClick = { onRestoreBackup(null) },
+                    enabled = !isBusy && (state.lastBackupPath.isNotBlank() || backups.isNotEmpty()),
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -1246,6 +1344,40 @@ private fun HomeTabContent(
                     Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = ColorGreen, modifier = Modifier.size(17.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("تشغيل", color = ColorGreen, fontSize = 11.5.sp)
+                }
+            }
+
+            if (backups.isNotEmpty()) {
+                HorizontalDivider(color = ColorCardBorder)
+                Text("النسخ الاحتياطية المحفوظة (${backups.size}):", color = ColorText, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                backups.take(3).forEach { snap ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(ColorBg)
+                            .border(1.dp, ColorCardBorder, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${snap.packageName} • ${snap.createdAt}",
+                                color = ColorText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${snap.fileCount} ملف • ${PackageInstallerManager.formatBytes(snap.totalBytes)}",
+                                color = ColorMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                        OutlinedButton(onClick = { onRestoreBackup(snap.backupPath) }) {
+                            Text("استعادة", color = ColorAmber, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
 
