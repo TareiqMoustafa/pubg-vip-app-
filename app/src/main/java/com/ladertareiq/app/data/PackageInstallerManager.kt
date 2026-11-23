@@ -13,6 +13,7 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.File
@@ -20,7 +21,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -98,50 +99,83 @@ object PackageInstallerManager {
         context.startActivity(fallback)
     }
 
-    fun inspectShizuku(context: Context): ShizukuStatus {
-        val installed = try {
-            context.packageManager.getPackageInfo(AppConfig.SHIZUKU_PACKAGE, 0)
+    fun isShizukuInstalled(context: Context): Boolean {
+        val pkgs = listOf(AppConfig.SHIZUKU_PACKAGE, AppConfig.SHIZUKU_MANAGER_PACKAGE)
+        for (pkg in pkgs) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(pkg, 0)
+                }
+                return true
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    fun isShizukuBinderAlive(): Boolean {
+        return try {
+            Shizuku.pingBinder()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun hasShizukuPermission(): Boolean {
+        return try {
+            if (!Shizuku.pingBinder()) return false
+            if (Shizuku.isPreV11()) return true
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun requestShizukuPermissionSdk(requestCode: Int = AppConfig.SHIZUKU_REQUEST_CODE): Boolean {
+        return try {
+            if (!Shizuku.pingBinder()) return false
+            if (Shizuku.isPreV11()) return true
+            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) return true
+            Shizuku.requestPermission(requestCode)
             true
         } catch (_: Exception) {
             false
         }
-        if (!installed) return ShizukuStatus.NOT_INSTALLED
+    }
 
-        val granted = try {
-            ContextCompat.checkSelfPermission(
-                context,
-                AppConfig.SHIZUKU_PERMISSION
-            ) == PackageManager.PERMISSION_GRANTED
-        } catch (_: Exception) {
-            false
-        }
-        if (granted) return ShizukuStatus.READY
-
-        val binderAlive = try {
-            val clazz = Class.forName("rikka.shizuku.Shizuku")
-            val pingMethod = clazz.getMethod("pingBinder")
-            (pingMethod.invoke(null) as? Boolean) == true
-        } catch (_: Exception) {
-            false
-        }
-        return if (binderAlive) ShizukuStatus.PERMISSION_REQUIRED else ShizukuStatus.INSTALLED_SERVICE_STOPPED
+    fun inspectShizuku(context: Context): ShizukuStatus {
+        if (!isShizukuInstalled(context)) return ShizukuStatus.NOT_INSTALLED
+        val alive = isShizukuBinderAlive()
+        if (!alive) return ShizukuStatus.INSTALLED_SERVICE_STOPPED
+        return if (hasShizukuPermission()) ShizukuStatus.READY else ShizukuStatus.PERMISSION_REQUIRED
     }
 
     fun openShizukuApp(context: Context) {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(AppConfig.SHIZUKU_PACKAGE)
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
-        } else {
-            openManageStorageSettings(context)
+        val candidates = listOf(AppConfig.SHIZUKU_PACKAGE, AppConfig.SHIZUKU_MANAGER_PACKAGE)
+        for (pkg in candidates) {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+                return
+            }
         }
+        openManageStorageSettings(context)
     }
 
     fun isPackageInstalled(context: Context, packageName: String): Boolean {
         val clean = packageName.trim()
         if (clean.isEmpty()) return false
         return try {
-            context.packageManager.getPackageInfo(clean, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(clean, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(clean, 0)
+            }
             true
         } catch (_: Exception) {
             false
@@ -180,7 +214,10 @@ object PackageInstallerManager {
 
     fun getGameAndroidDataTargetDir(gamePackage: String): File {
         val cleanPkg = gamePackage.trim().ifBlank { AppConfig.DEFAULT_GAME_PACKAGE }
-        return File(Environment.getExternalStorageDirectory(), "Android/data/$cleanPkg/files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks")
+        return File(
+            Environment.getExternalStorageDirectory(),
+            "Android/data/$cleanPkg/files/UE4Game/ShadowTrackerExtra/ShadowTrackerExtra/Saved/Paks"
+        )
     }
 
     fun listPreparedItems(context: Context): List<PreparedPackageItem> {
@@ -201,6 +238,30 @@ object PackageInstallerManager {
                     sizeBytes = sz,
                     isDirectory = f.isDirectory,
                     isZipArchive = !f.isDirectory && f.extension.lowercase(Locale.US) == "zip"
+                )
+            }
+    }
+
+    fun listBackupSnapshots(context: Context, gamePackage: String? = null): List<BackupSnapshot> {
+        val root = getBackupsRootDir(context)
+        val dirs = root.listFiles()?.filter { it.isDirectory } ?: return emptyList()
+        val cleanFilter = gamePackage?.trim()?.lowercase(Locale.US).orEmpty()
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+
+        return dirs
+            .filter { dir ->
+                cleanFilter.isEmpty() || dir.name.lowercase(Locale.US).startsWith("${cleanFilter}_")
+            }
+            .sortedByDescending { it.lastModified() }
+            .map { dir ->
+                val files = dir.walkTopDown().filter { it.isFile }.toList()
+                val pkg = dir.name.substringBeforeLast("_", dir.name)
+                BackupSnapshot(
+                    packageName = pkg,
+                    backupPath = dir.absolutePath,
+                    createdAt = sdf.format(Date(dir.lastModified())),
+                    fileCount = files.size,
+                    totalBytes = files.sumOf { it.length() }
                 )
             }
     }
@@ -303,17 +364,25 @@ object PackageInstallerManager {
         }
     }
 
+    private fun shellEscape(raw: String): String = "'" + raw.replace("'", "'\\''") + "'"
+
     private suspend fun executeShizukuCommand(command: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         try {
-            val clazz = Class.forName("rikka.shizuku.Shizuku")
-            val newProc = clazz.getDeclaredMethod(
+            if (!Shizuku.pingBinder()) {
+                return@withContext false to "خدمة Shizuku غير متصلة بالـ Binder."
+            }
+            if (!Shizuku.isPreV11() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                return@withContext false to "إذن Shizuku غير ممنوح للتطبيق."
+            }
+
+            val newProcMethod = Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
                 Array<String>::class.java,
                 Array<String>::class.java,
                 String::class.java
             )
-            newProc.isAccessible = true
-            val proc = newProc.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process
+            newProcMethod.isAccessible = true
+            val proc = newProcMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process
                 ?: return@withContext false to "تعذر إنشاء عملية عبر Shizuku."
 
             val out = BufferedReader(InputStreamReader(proc.inputStream)).use { it.readText() }
@@ -324,30 +393,48 @@ object PackageInstallerManager {
             } else {
                 false to (err.trim().ifBlank { "فشل أمر Shizuku برمز $exitCode" })
             }
-        } catch (_: Exception) {
-            false to "واجهة Shizuku البرمجية غير مفعّلة في هذا البناء (استخدم النقل المباشر أو أداة Shizuku)."
+        } catch (ex: Exception) {
+            false to "تعذر تنفيذ أمر Shizuku: ${ex.localizedMessage ?: ex.javaClass.simpleName}"
         }
     }
 
     suspend fun backupTargetPaks(context: Context, gamePackage: String): InstallResult = withContext(Dispatchers.IO) {
         val cleanPkg = gamePackage.trim().ifBlank { AppConfig.DEFAULT_GAME_PACKAGE }
         val targetDir = getGameAndroidDataTargetDir(cleanPkg)
-        if (!targetDir.exists() || !targetDir.isDirectory) {
-            return@withContext InstallResult(false, "مجلد Paks غير موجود لـ $cleanPkg.")
-        }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val backupDir = File(getBackupsRootDir(context), "${cleanPkg}_$stamp")
-        return@withContext try {
-            targetDir.copyRecursively(backupDir, overwrite = true)
-            val count = backupDir.walkTopDown().filter { it.isFile }.count()
-            InstallResult(
-                true,
-                "تم أخذ نسخة احتياطية ($count ملف) لـ $cleanPkg.",
-                backupDir.absolutePath
-            )
-        } catch (ex: Exception) {
-            InstallResult(false, "تعذر إنشاء النسخة الاحتياطية: ${ex.localizedMessage ?: ex.javaClass.simpleName}")
+
+        if (targetDir.exists() && targetDir.isDirectory && targetDir.canRead()) {
+            return@withContext try {
+                targetDir.copyRecursively(backupDir, overwrite = true)
+                val count = backupDir.walkTopDown().filter { it.isFile }.count()
+                InstallResult(
+                    true,
+                    "تم أخذ نسخة احتياطية ($count ملف) لـ $cleanPkg.",
+                    backupDir.absolutePath
+                )
+            } catch (ex: Exception) {
+                InstallResult(false, "تعذر إنشاء النسخة الاحتياطية: ${ex.localizedMessage ?: ex.javaClass.simpleName}")
+            }
         }
+
+        if (inspectShizuku(context) == ShizukuStatus.READY) {
+            backupDir.mkdirs()
+            val cmd = "mkdir -p ${shellEscape(backupDir.absolutePath)} && " +
+                "if [ -d ${shellEscape(targetDir.absolutePath)} ]; then cp -rf ${shellEscape(targetDir.absolutePath)}/. ${shellEscape(backupDir.absolutePath)}/; fi"
+            val (ok, info) = executeShizukuCommand(cmd)
+            if (ok) {
+                val count = backupDir.walkTopDown().filter { it.isFile }.count()
+                return@withContext InstallResult(
+                    true,
+                    "تم أخذ نسخة احتياطية ($count ملف) عبر Shizuku لـ $cleanPkg.",
+                    backupDir.absolutePath
+                )
+            }
+            return@withContext InstallResult(false, "تعذر أخذ النسخة عبر Shizuku: $info")
+        }
+
+        InstallResult(false, "مجلد Paks غير متاح مباشرة لـ $cleanPkg؛ فعّل إذن Shizuku أولاً.")
     }
 
     suspend fun restoreTargetPaks(context: Context, backupPath: String, gamePackage: String): InstallResult =
@@ -357,16 +444,29 @@ object PackageInstallerManager {
                 return@withContext InstallResult(false, "النسخة الاحتياطية المحددة غير موجودة.")
             }
             val targetDir = getGameAndroidDataTargetDir(gamePackage)
-            return@withContext try {
+            try {
                 targetDir.mkdirs()
                 src.copyRecursively(targetDir, overwrite = true)
-                InstallResult(
+                return@withContext InstallResult(
                     true,
                     "تمت استعادة النسخة الاحتياطية إلى ${targetDir.absolutePath}.",
                     targetDir.absolutePath
                 )
-            } catch (ex: Exception) {
-                InstallResult(false, "تعذر استعادة النسخة الاحتياطية: ${ex.localizedMessage ?: ex.javaClass.simpleName}")
+            } catch (_: Exception) {
+                if (inspectShizuku(context) == ShizukuStatus.READY) {
+                    val cmd = "mkdir -p ${shellEscape(targetDir.absolutePath)} && " +
+                        "cp -rf ${shellEscape(src.absolutePath)}/. ${shellEscape(targetDir.absolutePath)}/"
+                    val (ok, info) = executeShizukuCommand(cmd)
+                    if (ok) {
+                        return@withContext InstallResult(
+                            true,
+                            "تمت الاستعادة عبر Shizuku إلى ${targetDir.absolutePath}.",
+                            targetDir.absolutePath
+                        )
+                    }
+                    return@withContext InstallResult(false, "تعذر الاستعادة عبر Shizuku: $info")
+                }
+                return@withContext InstallResult(false, "تعذر استعادة النسخة الاحتياطية؛ تأكد من صلاحية Shizuku.")
             }
         }
 
@@ -411,9 +511,12 @@ object PackageInstallerManager {
             val shzStatus = inspectShizuku(context)
             if (shzStatus == ShizukuStatus.READY) {
                 val cmd = if (src.isDirectory) {
-                    "mkdir -p '${targetDir.absolutePath}' && cp -rf '${src.absolutePath}/.' '${targetDir.absolutePath}/'"
+                    "mkdir -p ${shellEscape(targetDir.absolutePath)} && " +
+                        "cp -rf ${shellEscape(src.absolutePath)}/. ${shellEscape(targetDir.absolutePath)}/"
                 } else {
-                    "mkdir -p '${targetDir.absolutePath}' && cp -f '${src.absolutePath}' '${targetDir.absolutePath}/${src.name}'"
+                    val destPath = File(targetDir, src.name).absolutePath
+                    "mkdir -p ${shellEscape(targetDir.absolutePath)} && " +
+                        "cp -f ${shellEscape(src.absolutePath)} ${shellEscape(destPath)}"
                 }
                 val (ok, info) = executeShizukuCommand(cmd)
                 if (ok) {
@@ -460,7 +563,7 @@ object PackageInstallerManager {
 
         var conn: HttpURLConnection? = null
         try {
-            conn = (URL(cleanUrl).openConnection() as HttpURLConnection).apply {
+            conn = (URI(cleanUrl).toURL().openConnection() as HttpURLConnection).apply {
                 connectTimeout = AppConfig.CONNECT_TIMEOUT_MS
                 readTimeout = AppConfig.READ_TIMEOUT_MS
                 setRequestProperty("User-Agent", "LaderTareiq/${AppConfig.APP_VERSION} (Android; Kotlin)")
